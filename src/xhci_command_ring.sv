@@ -20,7 +20,10 @@ module command_ring(
     output reg [4:0]      control_enabled_slot,
     output reg [67:0]     ctrl_update_slot_ctx_ptr,
     output reg [73:0]     set_ep_tr_ptr_out,
-    output reg [8:0]      set_slot_state
+    output reg [8:0]      set_slot_state,
+    output reg            dbg_pending_request,
+    output reg [63:0]     dbg_cr_ptr,
+    input                 dbg_status_cr
 );
 
     //---------------------------------------------------------
@@ -44,6 +47,9 @@ module command_ring(
     localparam PROCESS_RING    = 5'h4;
     localparam NEXT_RING       = 5'h5;
     localparam RUN_SUB_TASK    = 5'h6;
+    localparam DEBUG_ASSERT    = 5'h7;
+    localparam DEBUG_DELAY     = 5'h8;
+    localparam DEBUG_WAIT      = 5'h9;
 
     localparam SUB_TASK_NONE           = 5'h0;
     localparam SUB_TASK_ENABLE_SLOT    = 5'h1;
@@ -247,6 +253,9 @@ module command_ring(
             sub_task_state <= 5'h0;
 
             event_delay_counter <= 32'h0;
+
+            dbg_pending_request <= 1'b0;
+            dbg_cr_ptr <= 64'h0;
             
             //---------------------------------------------------------
             // Memory Write
@@ -335,7 +344,28 @@ module command_ring(
                     mrd_has_request <= 1'b0;
                     mrd_fifo_en     <= 1'b0;
 
-                    state <= PROCESS_RING;
+                    //state <= PROCESS_RING;
+                    state <= DEBUG_ASSERT;
+                end
+                DEBUG_ASSERT: begin
+                    if (trb_cycle_bit != ring_cycle_state) begin
+                        //現在のCycle Bitと違うTRB = 最終TRBまで読み取った -> IDLE移行
+                        state <= IDLE;
+                    end else begin
+                        dbg_pending_request <= 1'b1;
+                        dbg_cr_ptr <= command_ring_dequeue_pointer;
+
+                        state <= DEBUG_DELAY;
+                    end
+                end
+                DEBUG_DELAY: begin
+                    state <= DEBUG_WAIT;
+                    dbg_pending_request <= 1'b0;
+                end
+                DEBUG_WAIT: begin
+                    if (!dbg_status_cr) begin
+                        state <= PROCESS_RING;
+                    end
                 end
                 PROCESS_RING: begin
                     if (trb_cycle_bit != ring_cycle_state) begin

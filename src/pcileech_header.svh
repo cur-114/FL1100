@@ -446,6 +446,10 @@ interface xHCI_RtReg;
     );
 endinterface
 
+interface xHCI_DbReg;
+    reg [255:0] db_regs;
+endinterface
+
 interface xHCI_ExCap;
     reg [31:0] vd_cap [207:0];
 endinterface
@@ -647,46 +651,7 @@ typedef struct packed {
 } tr_ctx_lookup_t;
 
 typedef struct packed {
-    logic [31:0] max_wait_time;
-    logic [31:0] wait_time;
-    logic        waiting;
-
-    logic        received;
-    logic [63:0] trb_ptr;
-    logic [63:0] buffer_pointer;
-    logic [16:0] transfer_length;
-    logic [4:0]  td_size;
-    logic [9:0]  interrupter_target;
-    logic        chain_bit;
-    logic        interrupt_on_short;
-    logic        interrupt_on_cplt;
-    logic        immediate_data;
-} tr_ctx_normal_t;
-
-typedef struct packed {
-    logic [63:0] event_data;
-    logic [9:0]  interrupter_target;
-} tr_ctx_event_t;
-
-typedef struct packed {
     tr_ctx_lookup_t lookup;
-    tr_ctx_normal_t normal;
-    tr_ctx_event_t  evt;
 } tr_ctx_t;
-
-package settings;
-    localparam [31:0] OFFSET_OP_REG  = 32'h0080;
-    localparam [31:0] OFFSET_RT_REG  = 32'h2000;
-    localparam [31:0] OFFSET_DB      = 32'h3000;
-    localparam [31:0] OFFSET_EXT_CAP = 32'h8000;
-
-    localparam [15:0] HCI_VERSION_NUM  = 16'h0100;
-    localparam [7:0]  NUM_DEVICE_SLOTS =  8'h20;
-    localparam [10:0] NUM_INTERRUPTERS = 11'd8;
-    localparam [7:0]  NUM_PORTS        =  8'd8;
-
-    localparam [31:0] OFFSET_PORT_REG_START = OFFSET_OP_REG + 32'h400;
-    localparam [31:0] OFFSET_PORT_REG_END   = OFFSET_OP_REG + 32'h400 + 32'h20 * NUM_PORTS;
-endpackage
 
 `endif

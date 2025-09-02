@@ -12,18 +12,27 @@ module transfer_ring(
     input  [7:0]              ep_id_in,
     input  [15:0]             stream_id_in,
     IfSlotContext.sink        i_slot_ctx,
-    output reg [73:0]         set_ep_tr_ptr_out
+    output reg [73:0]         set_ep_tr_ptr_out,
+    output reg                dbg_pending_request,
+    output reg [63:0]         dbg_tr_ptr,
+    input                     dbg_status_tr,
+    output [3:0]              dbg_state,
+    output [3:0]              dbg_sub_task_type,
+    output [4:0]              dbg_sub_task_state,
+    output [7:0]              dbg_ep_id
 );
 
     reg [7:0]   slot_id;
-    reg [7:0]   ep_id;
     reg         db_queue_rd_en;
 
     wire        db_queue_full;
     wire [23:0] db_queue_din = { stream_id_in, ep_id_in };
     wire        db_queue_empty;
     wire [23:0] db_queue_dout;
+    wire [7:0]  ep_id     = db_queue_dout[7:0];
     wire [15:0] stream_id = db_queue_dout[23:8];
+    
+    assign dbg_ep_id = ep_id;
 
     fifo_db_slot_1 i_fifo_db_slot_1(
         .srst  ( rst            ),
@@ -46,10 +55,11 @@ module transfer_ring(
         UPDATE_TR,
         PROCESS_SUB_TASK,
         COMPLETE,
-        FIFO_READ,
+        DEBUG_ASSERT,
+        DEBUG_DELAY,
+        DEBUG_WAIT,
         FIFO_DELAY,
-        SET_DEQ_PTR,
-        RESP_NORMAL
+        FIFO_READ
     } state;
 
     typedef enum reg [3:0] {
@@ -81,10 +91,13 @@ module transfer_ring(
 
     reg [4:0] sub_task_state;
 
+    //DEBUG STATE
+    assign dbg_state = state;
+    assign dbg_sub_task_type = sub_task_type;
+    assign dbg_sub_task_state = sub_task_state;
+
     sub_task_type_t resume_sub_task_type;
     reg [4:0] resume_sub_task_state;
-
-    reg       return_to_idle_flag;
 
     reg [63:0]  current_pointer;
     reg         current_cycle_state;
@@ -94,7 +107,6 @@ module transfer_ring(
     localparam DELAY_AFTER_SHORT_PACKET_INTERRUPT = 32'd1000000;
 
     wire       trb_cycle_bit = trb[96];
-    wire       trb_chain_bit = trb[100];
     wire [5:0] trb_type      = trb[110:106];
 
     wire [7:0] ep_ctx_index  = (slot_id - 8'd1) * 8'd31 + ep_id - 8'd1;
@@ -161,9 +173,21 @@ module transfer_ring(
     wire [7:0]  sd_4dw_count       = sd_transfer_length[11:4] + ((sd_transfer_length[3:0] == 4'd0) ? 8'd0 : 8'd1);
 
     //---------------------------------------------------------
+    // Normal
+    //---------------------------------------------------------
+    reg        trb_normal_received;
+    reg [63:0] trb_normal_buffer_pointer;
+    reg [16:0] trb_normal_transfer_length;
+    reg [4:0]  trb_normal_td_size;
+    reg [9:0]  trb_normal_interrupter_target;
+    reg        trb_normal_interrupt_on_short;
+    reg        trb_normal_interrupt_on_cplt;
+    reg        trb_normal_immediate_data;
+
+    //---------------------------------------------------------
     // Setup Stage
     //---------------------------------------------------------
-    wire [9:0]  trb_setup_interrupter_target = trb[95:86];
+    wire [9:0]  trb_setup_interrupter_target = trb[31:22];
     wire [7:0]  trb_setup_bm_request_type    = trb[7:0];
     wire [7:0]  trb_setup_b_request          = trb[15:8];
     wire [15:0] trb_setup_w_value            = trb[31:16];
@@ -258,29 +282,10 @@ module transfer_ring(
             resume_sub_task_type  <= NONE;
             resume_sub_task_state <= 5'h0;
 
-            return_to_idle_flag <= 1'b0;
-
             for (int i = 0; i < 31; i++) begin
                 tr_ctx[i].lookup.valid       <= 1'b0;
                 tr_ctx[i].lookup.bram_addr   <= 8'h0;
                 tr_ctx[i].lookup.data_length <= 16'h0;
-
-                tr_ctx[i].normal.max_wait_time      <= 32'h0;
-                tr_ctx[i].normal.wait_time          <= 32'h0;
-                tr_ctx[i].normal.waiting            <= 1'b0;
-                tr_ctx[i].normal.received           <= 1'b0;
-                tr_ctx[i].normal.trb_ptr            <= 64'h0;
-                tr_ctx[i].normal.buffer_pointer     <= 64'h0;
-                tr_ctx[i].normal.transfer_length    <= 17'h0;
-                tr_ctx[i].normal.td_size            <= 5'h0;
-                tr_ctx[i].normal.interrupter_target <= 10'h0;
-                tr_ctx[i].normal.chain_bit          <= 1'b0;
-                tr_ctx[i].normal.interrupt_on_short <= 1'b0;
-                tr_ctx[i].normal.interrupt_on_cplt  <= 1'b0;
-                tr_ctx[i].normal.immediate_data     <= 1'b0;
-
-                tr_ctx[i].evt.event_data         <= 64'h0;
-                tr_ctx[i].evt.interrupter_target <= 10'h0;
             end
 
             set_ep_tr_ptr_out   <= 74'h0;
@@ -299,6 +304,16 @@ module transfer_ring(
             sd_current_4dw_index <= 8'h0;
 
             transfer_length_counter <= 24'h0;
+
+            //Normal
+            trb_normal_received <= 1'b0;
+            trb_normal_buffer_pointer     <= 64'h0;
+            trb_normal_transfer_length    <= 17'h0;
+            trb_normal_td_size            <= 5'h0;
+            trb_normal_interrupter_target <= 10'h0;
+            trb_normal_interrupt_on_short <= 1'b0;
+            trb_normal_interrupt_on_cplt  <= 1'b0;
+            trb_normal_immediate_data     <= 1'b0;
 
             td_stalled   <= 1'b0;
 
@@ -351,52 +366,11 @@ module transfer_ring(
                 slot_id <= slot_id_in;
             end
 
-            for (int i = 0; i < 31; i++) begin
-                if (tr_ctx[i].normal.waiting) begin
-                    if (tr_ctx[i].normal.wait_time < tr_ctx[i].normal.max_wait_time) begin
-                        tr_ctx[i].normal.wait_time <= tr_ctx[i].normal.wait_time + 32'h1;
-                    end
-                end
-            end
-
             case(state)
                 IDLE: begin
                     if (!db_queue_empty) begin
                         db_queue_rd_en <= 1'b1;
                         state <= FIFO_DELAY;
-                    end else begin
-                        for (int i = 0; i < 31; i++) begin
-                            if (tr_ctx[i].normal.waiting) begin
-                                if (tr_ctx[i].normal.wait_time >= tr_ctx[i].normal.max_wait_time) begin
-                                    tr_ctx[i].normal.max_wait_time <= 32'h0;
-                                    tr_ctx[i].normal.wait_time     <= 32'h0;
-                                    tr_ctx[i].normal.waiting       <= 1'b0;
-
-                                    ep_id <= i + 1;
-
-                                    if (tr_ctx[i].normal.chain_bit) begin
-                                        trans_event_trb_pointer       <= tr_ctx[i].evt.event_data;
-                                        trans_event_event_data        <= 1'b1;
-                                        trans_event_transfer_length   <= 24'h0;
-                                        trans_event_completion_code   <= 8'hD;
-                                        trans_event_interrupter_index <= tr_ctx[i].evt.interrupter_target[2:0];
-                                    end else begin
-                                        trans_event_trb_pointer       <= tr_ctx[i].normal.trb_ptr;
-                                        trans_event_event_data        <= 1'b0;
-                                        trans_event_transfer_length   <= { 7'h0, tr_ctx[i].normal.transfer_length };
-                                        trans_event_completion_code   <= 8'hD;
-                                        trans_event_interrupter_index <= tr_ctx[i].normal.interrupter_target[2:0];
-                                    end
-                                    
-                                    state <= PROCESS_SUB_TASK;
-                                    sub_task_type  <= SEND_TRANSFER_CMD;
-                                    sub_task_state <= 5'd0;
-
-                                    return_to_idle_flag <= 1'b1;
-                                    break;
-                                end
-                            end
-                        end
                     end
                 end
                 FIFO_DELAY: begin
@@ -404,10 +378,6 @@ module transfer_ring(
                     state <= FIFO_READ;
                 end
                 FIFO_READ: begin
-                    ep_id <= db_queue_dout[7:0];
-                    state <= SET_DEQ_PTR;
-                end
-                SET_DEQ_PTR: begin
                     current_pointer     <= i_slot_ctx.ep_ctx[ep_ctx_index].p_tr_dequeue;
                     current_cycle_state <= i_slot_ctx.ep_ctx[ep_ctx_index].cycle_state;
 
@@ -431,7 +401,27 @@ module transfer_ring(
                     mrd_has_request <= 1'b0;
                     mrd_fifo_en     <= 1'b0;
 
-                    state <= PROCESS_TRB;
+                    //state <= PROCESS_TRB;
+                    state <= DEBUG_ASSERT;
+                end
+                DEBUG_ASSERT: begin
+                    //if (trb_cycle_bit != current_cycle_state) begin
+                    //    state <= COMPLETE;
+                    //end else begin
+                        dbg_pending_request <= 1'b1;
+                        dbg_tr_ptr <= current_pointer;
+
+                        state <= DEBUG_DELAY;
+                    //end
+                end
+                DEBUG_DELAY: begin
+                    dbg_pending_request <= 1'b0;
+                    state <= DEBUG_WAIT;
+                end
+                DEBUG_WAIT: begin
+                    if (!dbg_status_tr) begin
+                        state <= PROCESS_TRB;
+                    end
                 end
                 PROCESS_TRB: begin
                     if (trb_cycle_bit != current_cycle_state) begin
@@ -439,23 +429,21 @@ module transfer_ring(
                     end else begin
                         case (trb_type)
                             6'd1: begin
-                                tr_ctx[tr_ctx_index].normal.received <= trb_chain_bit;
+                                trb_normal_received <= 1'b1;
+                                
+                                trb_normal_buffer_pointer     <= trb[63:0];
+                                trb_normal_transfer_length    <= trb[80:64];
+                                trb_normal_td_size            <= trb[85:81];
+                                trb_normal_interrupter_target <= trb[95:86];
+                                trb_normal_interrupt_on_short <= trb[98];
+                                trb_normal_interrupt_on_cplt  <= trb[101];
+                                trb_normal_immediate_data     <= trb[102];
 
-                                tr_ctx[tr_ctx_index].normal.max_wait_time <= 32'h4600000; // 1s
-                                tr_ctx[tr_ctx_index].normal.wait_time     <= 32'h0;
-                                tr_ctx[tr_ctx_index].normal.waiting       <= 1'b1;
-                                tr_ctx[tr_ctx_index].normal.trb_ptr       <= current_pointer;
+                                transfer_length_counter <= trb[80:64];
 
-                                tr_ctx[tr_ctx_index].normal.buffer_pointer     <= trb[63:0];
-                                tr_ctx[tr_ctx_index].normal.transfer_length    <= trb[80:64];
-                                tr_ctx[tr_ctx_index].normal.td_size            <= trb[85:81];
-                                tr_ctx[tr_ctx_index].normal.interrupter_target <= trb[95:86];
-                                tr_ctx[tr_ctx_index].normal.chain_bit          <= trb_chain_bit;
-                                tr_ctx[tr_ctx_index].normal.interrupt_on_short <= trb[98];
-                                tr_ctx[tr_ctx_index].normal.interrupt_on_cplt  <= trb[101];
-                                tr_ctx[tr_ctx_index].normal.immediate_data     <= trb[102];
-
-                                state <= NEXT_TRB;
+                                state <= PROCESS_SUB_TASK;
+                                sub_task_type <= HANDLE_NORMAL;
+                                sub_task_state <= STATE_RESPONSE_NORMAL;
                             end
                             6'd2: begin //Setup Stage
                                 state <= PROCESS_SUB_TASK;
@@ -469,13 +457,13 @@ module transfer_ring(
 
                                 trb_data_buffer_pointer     <= trb[63:0];
                                 trb_data_transfer_length    <= trb[80:64];
-                                trb_data_interrupter_target <= trb[95:86];
+                                trb_data_interrupter_target <= trb[31:22];
                                 trb_data_interrupt_on_short <= trb[98];
-                                trb_data_chain_bit          <= trb_chain_bit;
+                                trb_data_chain_bit          <= trb[100];
                                 trb_data_interrupt_on_cplt  <= trb[101];
 
-                                if (!trb_chain_bit) begin
-                                    tr_ctx[tr_ctx_index].normal.received <= 1'b0;
+                                if (!trb[100]) begin
+                                    trb_normal_received <= 1'b0;
                                 end
 
                                 state <= PROCESS_SUB_TASK;
@@ -485,12 +473,12 @@ module transfer_ring(
                             6'd4: begin //Status Stage
                                 trb_status_ptr <= current_pointer;
 
-                                trb_status_interrupter_target <= trb[95:86];
-                                trb_status_chain_bit          <= trb_chain_bit;
+                                trb_status_interrupter_target <= trb[31:22];
+                                trb_status_chain_bit          <= trb[100];
                                 trb_status_interrupt_on_cplt  <= trb[101];
 
-                                if (!trb_chain_bit) begin
-                                    tr_ctx[tr_ctx_index].normal.received <= 1'b0;
+                                if (!trb[100]) begin
+                                    trb_normal_received <= 1'b0;
                                 end
 
                                 state <= PROCESS_SUB_TASK;
@@ -506,29 +494,30 @@ module transfer_ring(
                                 state <= UPDATE_TR;
                             end
                             6'd7: begin //Event Data
-                                tr_ctx[tr_ctx_index].evt.event_data         <= trb[63:0];
-                                tr_ctx[tr_ctx_index].evt.interrupter_target <= trb[95:86];
-
-                                if (tr_ctx[tr_ctx_index].normal.received) begin
-                                    state <= NEXT_TRB;
+                                // Event Data TRB must be chain bit = 0
+                                // And Interrupt on Completion bit must be 1
+                                trans_event_trb_pointer <= trb[63:0]; //Event Data
+                                trans_event_event_data  <= 1'b1;
+                                if (trb_normal_received) begin
+                                    //trans_event_transfer_length <= { 7'h0, trb_normal_transfer_length };
+                                    trans_event_transfer_length <= 24'h0;
+                                    trans_event_completion_code <= 8'hD;
                                 end else begin
-                                    // Event Data TRB must be chain bit = 0
-                                    // And Interrupt on Completion bit must be 1
-                                    trans_event_trb_pointer <= trb[63:0]; //Event Data
-                                    trans_event_event_data  <= 1'b1;
+                                    //trans_event_transfer_length <= { 8'h0, sd_transfer_length };
                                     trans_event_transfer_length <= transfer_length_counter;
                                     trans_event_completion_code <= sd_short_packet ? 8'hD : 8'h1;
-                                    trans_event_interrupter_index <= trb[88:86];
-
-                                    transfer_length_counter <= 24'h0;
-
-                                    state <= PROCESS_SUB_TASK;
-                                    sub_task_type  <= SEND_TRANSFER_CMD;
-                                    sub_task_state <= 5'd0;
                                 end
-                                if (!trb_chain_bit) begin
-                                    tr_ctx[tr_ctx_index].normal.received <= 1'b0;
+                                trans_event_interrupter_index <= trb[88:86];
+
+                                transfer_length_counter <= 24'h0;
+
+                                if (!trb[100]) begin
+                                    trb_normal_received <= 1'b0;
                                 end
+
+                                state <= PROCESS_SUB_TASK;
+                                sub_task_type  <= SEND_TRANSFER_CMD;
+                                sub_task_state <= 5'd0;
                             end
                             default: begin
                                 state <= NEXT_TRB;
@@ -559,13 +548,12 @@ module transfer_ring(
                         HANDLE_NORMAL: begin
                             case (sub_task_state)
                                 STATE_RESPONSE_NORMAL: begin
-                                    if (tr_ctx[tr_ctx_index].normal.interrupt_on_cplt ||
-                                        tr_ctx[tr_ctx_index].normal.interrupt_on_short) begin
+                                    if (trb_normal_interrupt_on_cplt || trb_normal_interrupt_on_short) begin
                                         trans_event_trb_pointer <= current_pointer;
                                         trans_event_event_data  <= 1'b0;
-                                        trans_event_transfer_length <= { 7'h0, tr_ctx[tr_ctx_index].normal.transfer_length };
+                                        trans_event_transfer_length <= { 7'h0, trb_normal_transfer_length };
                                         trans_event_completion_code <= 8'hD;
-                                        trans_event_interrupter_index <= tr_ctx[tr_ctx_index].normal.interrupter_target[2:0];
+                                        trans_event_interrupter_index <= trb_setup_interrupter_target[2:0];
 
                                         state <= PROCESS_SUB_TASK;
                                         sub_task_type  <= SEND_TRANSFER_CMD;
@@ -778,13 +766,7 @@ module transfer_ring(
                                         event_ring_send <= 1'b0;
                                         event_ring_has_request <= 1'b0;
 
-                                        if (return_to_idle_flag) begin
-                                            return_to_idle_flag <= 1'b0;
-                                            sub_task_type <= NONE;
-                                            sub_task_state <= 5'd0;
-
-                                            state <= IDLE;
-                                        end else if (resume_sub_task_type == NONE) begin
+                                        if (resume_sub_task_type == NONE) begin
                                             sub_task_type <= NONE;
                                             sub_task_state <= 5'd0;
                                             state <= NEXT_TRB;

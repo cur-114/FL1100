@@ -246,7 +246,8 @@ module host_mem_write_2_mux (
     IfMemoryWrite.sink   wr_in_2,
     IfMemoryWrite.sink   wr_in_3,
     IfMemoryWrite.sink   wr_in_4,
-    IfMemoryWrite.sink   wr_in_5
+    IfMemoryWrite.sink   wr_in_5,
+    IfMemoryWrite.sink   wr_in_6
 );
     reg [3:0] id;
 
@@ -254,49 +255,57 @@ module host_mem_write_2_mux (
                                     (id==2) ? wr_in_2.address :
                                     (id==3) ? wr_in_3.address :
                                     (id==4) ? wr_in_4.address :
-                                    (id==5) ? wr_in_5.address : 64'h0;
+                                    (id==5) ? wr_in_5.address :
+                                    (id==6) ? wr_in_6.address : 64'h0;
     
     assign mux_source.data_length = (id==1) ? wr_in_1.data_length :
                                     (id==2) ? wr_in_2.data_length :
                                     (id==3) ? wr_in_3.data_length :
                                     (id==4) ? wr_in_4.data_length :
-                                    (id==5) ? wr_in_5.data_length : 32'h0;
+                                    (id==5) ? wr_in_5.data_length :
+                                    (id==6) ? wr_in_6.data_length : 32'h0;
     
     assign mux_source.has_data    = (id==1) ? wr_in_1.has_data :
                                     (id==2) ? wr_in_2.has_data :
                                     (id==3) ? wr_in_3.has_data :
                                     (id==4) ? wr_in_4.has_data :
-                                    (id==5) ? wr_in_5.has_data : 1'b0;
+                                    (id==5) ? wr_in_5.has_data :
+                                    (id==6) ? wr_in_6.has_data : 1'b0;
     
     assign mux_source.din         = (id==1) ? wr_in_1.din :
                                     (id==2) ? wr_in_2.din :
                                     (id==3) ? wr_in_3.din :
                                     (id==4) ? wr_in_4.din :
-                                    (id==5) ? wr_in_5.din : 128'h0;
+                                    (id==5) ? wr_in_5.din :
+                                    (id==6) ? wr_in_6.din : 128'h0;
     
     assign mux_source.wr_en       = (id==1) ? wr_in_1.wr_en :
                                     (id==2) ? wr_in_2.wr_en :
                                     (id==3) ? wr_in_3.wr_en :
                                     (id==4) ? wr_in_4.wr_en :
-                                    (id==5) ? wr_in_5.wr_en : 1'b0;
+                                    (id==5) ? wr_in_5.wr_en :
+                                    (id==6) ? wr_in_6.wr_en : 1'b0;
     
     assign mux_source.wr_done     = (id==1) ? wr_in_1.wr_done :
                                     (id==2) ? wr_in_2.wr_done :
                                     (id==3) ? wr_in_3.wr_done :
                                     (id==4) ? wr_in_4.wr_done :
-                                    (id==5) ? wr_in_5.wr_done : 1'b0;
+                                    (id==5) ? wr_in_5.wr_done :
+                                    (id==6) ? wr_in_6.wr_done : 1'b0;
 
     assign wr_in_1.state = (id==1) ? mux_source.state : WR_IDLE;
     assign wr_in_2.state = (id==2) ? mux_source.state : WR_IDLE;
     assign wr_in_3.state = (id==3) ? mux_source.state : WR_IDLE;
     assign wr_in_4.state = (id==4) ? mux_source.state : WR_IDLE;
     assign wr_in_5.state = (id==5) ? mux_source.state : WR_IDLE;
+    assign wr_in_6.state = (id==6) ? mux_source.state : WR_IDLE;
 
     wire [3:0] id_next_newsel = wr_in_1.has_data ? 1 :
                                 wr_in_2.has_data ? 2 :
                                 wr_in_3.has_data ? 3 :
                                 wr_in_4.has_data ? 4 :
-                                wr_in_5.has_data ? 5 : 0;
+                                wr_in_5.has_data ? 5 :
+                                wr_in_6.has_data ? 6 : 0;
     
     wire [3:0] id_next        = mux_source.state == WR_IDLE ? id_next_newsel : id;
     
@@ -543,7 +552,8 @@ module host_mem_read_2_mux (
     IfMemoryRead.sink   rd_in_2,
     IfMemoryRead.sink   rd_in_3,
     IfMemoryRead.sink   rd_in_4,
-    IfMemoryRead.sink   rd_in_5
+    IfMemoryRead.sink   rd_in_5,
+    IfMemoryRead.sink   rd_in_6
 );
     reg [3:0] id;
 
@@ -551,43 +561,50 @@ module host_mem_read_2_mux (
                                     (id==2) ? rd_in_2.address : 
                                     (id==3) ? rd_in_3.address :
                                     (id==4) ? rd_in_4.address :
-                                    (id==5) ? rd_in_5.address : 64'h0;
+                                    (id==5) ? rd_in_5.address :
+                                    (id==6) ? rd_in_6.address : 64'h0;
     
     assign mux_source.data_length = (id==1) ? rd_in_1.data_length :
                                     (id==2) ? rd_in_2.data_length :
                                     (id==3) ? rd_in_3.data_length :
                                     (id==4) ? rd_in_4.data_length :
-                                    (id==5) ? rd_in_5.data_length : 32'h0;
+                                    (id==5) ? rd_in_5.data_length :
+                                    (id==6) ? rd_in_6.data_length : 32'h0;
 
     assign mux_source.has_request = (id==1) ? rd_in_1.has_request :
                                     (id==2) ? rd_in_2.has_request :
                                     (id==3) ? rd_in_3.has_request :
                                     (id==4) ? rd_in_4.has_request :
-                                    (id==5) ? rd_in_5.has_request : 1'b0;
+                                    (id==5) ? rd_in_5.has_request :
+                                    (id==6) ? rd_in_6.has_request : 1'b0;
 
     assign mux_source.rd_en       = (id==1) ? rd_in_1.rd_en :
                                     (id==2) ? rd_in_2.rd_en :
                                     (id==3) ? rd_in_3.rd_en :
                                     (id==4) ? rd_in_4.rd_en :
-                                    (id==5) ? rd_in_5.rd_en : 1'b0;
+                                    (id==5) ? rd_in_5.rd_en :
+                                    (id==6) ? rd_in_6.rd_en : 1'b0;
 
     assign rd_in_1.state = (id==1) ? mux_source.state : RD_IDLE;
     assign rd_in_2.state = (id==2) ? mux_source.state : RD_IDLE;
     assign rd_in_3.state = (id==3) ? mux_source.state : RD_IDLE;
     assign rd_in_4.state = (id==4) ? mux_source.state : RD_IDLE;
     assign rd_in_5.state = (id==5) ? mux_source.state : RD_IDLE;
+    assign rd_in_6.state = (id==6) ? mux_source.state : RD_IDLE;
 
     assign rd_in_1.dout = (id==1) ? mux_source.dout : 128'h0;
     assign rd_in_2.dout = (id==2) ? mux_source.dout : 128'h0;
     assign rd_in_3.dout = (id==3) ? mux_source.dout : 128'h0;
     assign rd_in_4.dout = (id==4) ? mux_source.dout : 128'h0;
     assign rd_in_5.dout = (id==5) ? mux_source.dout : 128'h0;
+    assign rd_in_6.dout = (id==6) ? mux_source.dout : 128'h0;
 
     wire [3:0] id_next_newsel = rd_in_1.has_request ? 1 :
                                 rd_in_2.has_request ? 2 :
                                 rd_in_3.has_request ? 3 :
                                 rd_in_4.has_request ? 4 :
-                                rd_in_5.has_request ? 5 : 0;
+                                rd_in_5.has_request ? 5 :
+                                rd_in_6.has_request ? 6 : 0;
     
     wire [3:0] id_next        = mux_source.state == WR_IDLE ? id_next_newsel : id;
 

@@ -11,8 +11,16 @@ module event_ring(
     IfMemoryWrite.source    write_out,
     IfMemoryRead.source     read_out,
     IfMsiXRequest.source    msix_req_out,
-    IfInterrupterController.sink interrupter_controller_in
+    IfInterrupterController.sink interrupter_controller_in,
+    IfDebugEventRing.source dbg_out
 );
+    //DEBUG
+    reg        dbg_pending_request;
+    reg [63:0] dbg_evt_ptr;
+
+    assign dbg_out.pending_request = dbg_pending_request;
+    assign dbg_out.ptr = dbg_evt_ptr;
+
     //===========================================
     // STATE
     //===========================================
@@ -26,6 +34,9 @@ module event_ring(
     localparam WALK_SEGMENT_TABLE_READ_DATA  = 4'd8;
     localparam WALK_SEGMENT_TABLE_CHECK      = 4'd9;
     localparam COMPLETE                      = 4'd10;
+    localparam DEBUG_ASSERT                  = 4'd11;
+    localparam DEBUG_DELAY                   = 4'd12;
+    localparam DEBUG_WAIT                    = 4'd13;
 
     reg [3:0] state;
 
@@ -104,6 +115,8 @@ module event_ring(
 
     always @(posedge clk_pcie) begin
         if (rst) begin
+            dbg_pending_request <= 1'b0;
+            dbg_evt_ptr <= 64'h0;
 
             state <= IDLE;
             for (int i = 0; i < 8; i++) begin
@@ -174,11 +187,28 @@ module event_ring(
 
                         ic_set_event_interrupt <= 1'b0;
 
-                        state <= SEND_MSIX;
+                        //state <= SEND_MSIX;
+                        state <= DEBUG_ASSERT;
                     end else begin
                         mwr_fifo_en <= 1'b0;
                         mwr_fifo_in <= 128'h0;
                         mwr_fifo_done <= 1'b1;
+                    end
+                end
+                DEBUG_ASSERT: begin
+                    dbg_pending_request <= 1'b1;
+                    dbg_evt_ptr <= current_enqueue_pointer;
+
+                    state <= DEBUG_DELAY;
+                end
+                DEBUG_DELAY: begin
+                    //Debug Delay
+                    dbg_pending_request <= 1'b0;
+                    state <= DEBUG_WAIT;
+                end
+                DEBUG_WAIT: begin
+                    if (!dbg_out.status) begin
+                        state <= SEND_MSIX;
                     end
                 end
                 SEND_MSIX: begin

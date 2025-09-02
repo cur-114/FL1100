@@ -1,0 +1,10 @@
+.Xil
+vivado*.backup.jou
+vivado*.backup.log
+vivado.jou
+vivado.log
+vivado_pid*.str
+pcileech_squirrel
+pcileech_squirrel.bin
+pcileech_enigma_x1
+pcileech_enigma_x1.bin

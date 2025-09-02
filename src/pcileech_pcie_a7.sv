@@ -65,7 +65,6 @@ module pcileech_pcie_a7(
     always @ ( posedge pcie_clk_c )
         tickcount64_pcie_refclk <= tickcount64_pcie_refclk + 1;
     assign led_state = user_lnk_up || tickcount64_pcie_refclk[25];
-    wire pm_wake;
     
     // ----------------------------------------------------------------------------
     // PCIe CFG RX/TX <--> FIFO below
@@ -77,8 +76,7 @@ module pcileech_pcie_a7(
         .dfifo                      ( dfifo_cfg                 ),        
         .ctx                        ( ctx                       ),
         .tlps_static                ( tlps_static.source        ),
-        .pcie_id                    ( pcie_id                   ),   // -> [15:0]
-        .pm_wake                    ( pm_wake                   )
+        .pcie_id                    ( pcie_id                   )   // -> [15:0]
     );
     
     // ----------------------------------------------------------------------------
@@ -101,8 +99,7 @@ module pcileech_pcie_a7(
         .tlps_rx                    ( tlps_rx.sink_lite         ),
         .tlps_static                ( tlps_static.sink          ),
         .dshadow2fifo               ( dshadow2fifo              ),
-        .pcie_id                    ( pcie_id                   ),   // <- [15:0]
-        .pm_wake                    ( pm_wake                   )    // <- PM wake signal
+        .pcie_id                    ( pcie_id                   )   // <- [15:0]
     );
     
     pcileech_tlps128_dst64 i_pcileech_tlps128_dst64(

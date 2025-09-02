@@ -68,9 +68,6 @@ module slot_context(
             end
             if (set_slot_state[0]) begin
                 slot_ctx[set_slot_state[3:1]].slot_state <= slot_state_t'(set_slot_state[8:4]);
-                if (slot_state_t'(set_slot_state[8:4]) == DISABLE) begin
-                    slot_ctx[set_slot_state[3:1]].slot_enabled <= 1'b0;
-                end
             end
         end
     end

@@ -21,8 +21,7 @@ module pcileech_pcie_tlp_a7(
     IfAXIS128.sink_lite     tlps_rx,
     IfAXIS128.sink          tlps_static,
     IfShadow2Fifo.shadow    dshadow2fifo,
-    input [15:0]            pcie_id,
-    output                  pm_wake
+    input [15:0]            pcie_id
     );
     
     IfAXIS128 tlps_bar_rsp();
@@ -38,6 +37,7 @@ module pcileech_pcie_tlp_a7(
     // ------------------------------------------------------------------------
 
     IfMemoryWrite mem_wr_root(); //Root
+    IfMemoryWrite mem_wr_test(); //Test Module
     IfMemoryWrite mem_wr_evtr(); //Event Ring
     IfMemoryWrite mem_wr_cmdr(); //Command Ring
     IfMemoryWrite mem_wr_msix(); //MSI-X
@@ -56,11 +56,12 @@ module pcileech_pcie_tlp_a7(
         .rst            ( rst                           ),
         .clk_pcie       ( clk_pcie                      ),
         .mux_source     ( mem_wr_root.source            ),
-        .wr_in_1        ( mem_wr_evtr.sink              ),
-        .wr_in_2        ( mem_wr_cmdr.sink              ),
-        .wr_in_3        ( mem_wr_msix.sink              ),
-        .wr_in_4        ( mem_wr_trsr.sink              ),
-        .wr_in_5        ( mem_wr_set_ep_state.sink      )
+        .wr_in_1        ( mem_wr_test.sink              ),
+        .wr_in_2        ( mem_wr_evtr.sink              ),
+        .wr_in_3        ( mem_wr_cmdr.sink              ),
+        .wr_in_4        ( mem_wr_msix.sink              ),
+        .wr_in_5        ( mem_wr_trsr.sink              ),
+        .wr_in_6        ( mem_wr_set_ep_state.sink      )
     );
 
     // ------------------------------------------------------------------------
@@ -71,6 +72,7 @@ module pcileech_pcie_tlp_a7(
     IfMemoryRead mem_rd_uptr(); //Update Transfer Ring Dequeue Pointer
     IfMemoryRead mem_rd_evtr(); //Event Ring
     IfMemoryRead mem_rd_cmdr(); //Command Ring
+    IfMemoryRead mem_rd_test(); //Test Module
     IfMemoryRead mem_rd_trsr(); //Transfer Ring
     IfMemoryRead mem_rd_set_ep_state(); //Set Endpoint State
 
@@ -90,8 +92,9 @@ module pcileech_pcie_tlp_a7(
         .rd_in_1        ( mem_rd_uptr.sink              ),
         .rd_in_2        ( mem_rd_evtr.sink              ),
         .rd_in_3        ( mem_rd_cmdr.sink              ),
-        .rd_in_4        ( mem_rd_trsr.sink              ),
-        .rd_in_5        ( mem_rd_set_ep_state.sink      )
+        .rd_in_4        ( mem_rd_test.sink              ),
+        .rd_in_5        ( mem_rd_trsr.sink              ),
+        .rd_in_6        ( mem_rd_set_ep_state.sink      )
     );
 
     // ------------------------------------------------------------------------
@@ -120,6 +123,7 @@ module pcileech_pcie_tlp_a7(
     IfEventRingRequest event_ring_req_3(); //Transfer Ring
     IfInterrupterController if_interrupter_controller();
     wire enable_event_interrupt_bit;
+    IfDebugEventRing if_dbg_event_ring();
 
     event_ring i_event_ring(
         .rst               ( rst                            ),
@@ -129,7 +133,8 @@ module pcileech_pcie_tlp_a7(
         .write_out         ( mem_wr_evtr.source             ),
         .read_out          ( mem_rd_evtr.source             ),
         .msix_req_out      ( msix_request.source            ),
-        .interrupter_controller_in ( if_interrupter_controller.sink )
+        .interrupter_controller_in ( if_interrupter_controller.sink ),
+        .dbg_out           ( if_dbg_event_ring.source       )
     );
 
     event_ring_mux i_event_ring_mux(
@@ -158,15 +163,17 @@ module pcileech_pcie_tlp_a7(
         .event_ring_req_1   ( event_ring_req_1.source       ),
         .event_ring_req_2   ( event_ring_req_2.source       ),
         .event_ring_req_3   ( event_ring_req_3.source       ),
-        .mem_wr_out_1       ( mem_wr_cmdr.source            ),
-        .mem_wr_out_2       ( mem_wr_trsr.source            ),
-        .mem_wr_out_3       ( mem_wr_set_ep_state.source    ),
+        .mem_wr_out_1       ( mem_wr_test.source            ),
+        .mem_wr_out_2       ( mem_wr_cmdr.source            ),
+        .mem_wr_out_3       ( mem_wr_trsr.source            ),
+        .mem_wr_out_4       ( mem_wr_set_ep_state.source    ),
         .mem_rd_out_1       ( mem_rd_uptr.source            ),
         .mem_rd_out_2       ( mem_rd_cmdr.source            ),
-        .mem_rd_out_3       ( mem_rd_trsr.source            ),
-        .mem_rd_out_4       ( mem_rd_set_ep_state.source    ),
+        .mem_rd_out_3       ( mem_rd_test.source            ),
+        .mem_rd_out_4       ( mem_rd_trsr.source            ),
+        .mem_rd_out_5       ( mem_rd_set_ep_state.source    ),
         .interrupter_controller_out ( if_interrupter_controller.source ),
-        .pm_wake            ( pm_wake                       )
+        .dbg_evt_ring       ( if_dbg_event_ring.sink        )
     );
     
     pcileech_tlps128_cfgspace_shadow i_pcileech_tlps128_cfgspace_shadow(
@@ -217,10 +224,10 @@ module pcileech_pcie_tlp_a7(
         .tlps_out       ( tlps_tx                       ),
         .tlps_in1       ( tlps_cfg_rsp.sink             ),
         .tlps_in2       ( tlps_bar_rsp.sink             ),
-        .tlps_in3       ( tlps_mem_wr.sink              ),
-        .tlps_in4       ( tlps_mem_rd.sink              ),
-        .tlps_in5       ( tlps_rx_fifo.sink             ),
-        .tlps_in6       ( tlps_static                   )
+        .tlps_in3       ( tlps_rx_fifo.sink             ),
+        .tlps_in4       ( tlps_static                   ),
+        .tlps_in5       ( tlps_mem_wr.sink              ),
+        .tlps_in6       ( tlps_mem_rd.sink              )
     );
 
 endmodule

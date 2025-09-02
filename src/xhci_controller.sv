@@ -45,19 +45,21 @@ module xhci_bar0_impl_2(
     IfMemoryWrite.source          mem_wr_out_1,
     IfMemoryWrite.source          mem_wr_out_2,
     IfMemoryWrite.source          mem_wr_out_3,
+    IfMemoryWrite.source          mem_wr_out_4, //Set Endpoint State
     IfMemoryRead.source           mem_rd_out_1,
     IfMemoryRead.source           mem_rd_out_2,
     IfMemoryRead.source           mem_rd_out_3,
     IfMemoryRead.source           mem_rd_out_4,
+    IfMemoryRead.source           mem_rd_out_5, //Set Endpoint State
     IfInterrupterController.source interrupter_controller_out,
-    output bit                    pm_wake
+    IfDebugEventRing.sink         dbg_evt_ring
 //    IfMsiXRequest.source  msix_req_out
 );
-    import settings::*;
 
-    port_reg_t port_regs [NUM_PORTS];
+    port_reg_t port_regs [8];
 
     xHCI_OpReg if_op_reg();
+    xHCI_DbReg if_db_reg();
     xHCI_ExCap if_ex_cap();
 
     reg [87:0] drd_req_ctx;
@@ -75,13 +77,12 @@ module xhci_bar0_impl_2(
     wire [31:0] offset = drd_req_addr & 32'hFFFF;
     wire [31:0] wr_offset = dwr_addr & 32'hFFFF;
 
-    wire        rd_port_reg = offset >= OFFSET_PORT_REG_START && offset < OFFSET_PORT_REG_END; //Port Register Read
-    wire [31:0] rd_port_reg_index = rd_port_reg ? (offset - OFFSET_PORT_REG_START) >> 4 : 32'h0; //Port Register Index
-    wire [1:0]  rd_port_reg_data  = rd_port_reg ? ((offset - OFFSET_PORT_REG_START) >> 2) & 2'b11 : 2'h0; //Port Register Data
-
-    wire        wr_port_reg = wr_offset >= OFFSET_PORT_REG_START && wr_offset < OFFSET_PORT_REG_END; //Port Register Write
-    wire [31:0] wr_port_reg_index = wr_port_reg ? (wr_offset - OFFSET_PORT_REG_START) >> 4 : 32'h0; //Port Register Index
-    wire [1:0]  wr_port_reg_data  = wr_port_reg ? ((wr_offset - OFFSET_PORT_REG_START) >> 2) & 2'b11 : 2'h0; //Port Register Data
+    wire        rd_port_reg = offset >= 32'h480 && offset < 32'h500; //Port Register Read
+    wire [31:0] rd_port_reg_index = rd_port_reg ? (offset - 32'h480) >> 4 : 32'h0; //Port Register Index
+    wire [1:0]  rd_port_reg_data  = rd_port_reg ? ((offset - 32'h480) >> 2) & 2'b11 : 2'h0; //Port Register Data
+    wire        wr_port_reg = wr_offset >= 32'h480 && wr_offset < 32'h500; //Port Register Write
+    wire [31:0] wr_port_reg_index = wr_port_reg ? (wr_offset - 32'h480) >> 4 : 32'h0; //Port Register Index
+    wire [1:0]  wr_port_reg_data  = wr_port_reg ? ((wr_offset - 32'h480) >> 2) & 2'b11 : 2'h0; //Port Register Data
 
     reg [12:0] mf_index_counter;
 
@@ -100,12 +101,50 @@ module xhci_bar0_impl_2(
     assign event_ring_req_1.trb_data          = event_ring_trb_data;
 
     //---------------------------------------------------------
+    // Memory Write FIFO TEST
+    //---------------------------------------------------------
+
+    reg [31:0] mwr_ctrl;
+    reg [63:0] mwr_addr;
+    reg [31:0] mwr_length;
+    reg        mwr_has_data;
+
+    reg [127:0] mwr_fifo_in;
+    reg         mwr_fifo_en;
+    reg         mwr_fifo_done;
+
+    assign mem_wr_out_1.address     = mwr_addr;
+    assign mem_wr_out_1.data_length = mwr_length;
+    assign mem_wr_out_1.has_data    = mwr_has_data;
+    assign mem_wr_out_1.din         = mwr_fifo_in;
+    assign mem_wr_out_1.wr_en       = mwr_fifo_en;
+    assign mem_wr_out_1.wr_done     = mwr_fifo_done;
+
+    //---------------------------------------------------------
+    // Memory Read Test Module
+    //---------------------------------------------------------
+
+    reg [31:0] mrd_ctrl;
+    reg [63:0] mrd_addr;
+    reg [31:0] mrd_length;
+    reg        mrd_has_request;
+
+    reg        mrd_fifo_en;
+    
+    reg [127:0] mrd_data_stack [8];
+
+    assign mem_rd_out_3.address     = mrd_addr;
+    assign mem_rd_out_3.data_length = mrd_length;
+    assign mem_rd_out_3.has_request = mrd_has_request;
+    assign mem_rd_out_3.rd_en       = mrd_fifo_en;
+
+    //---------------------------------------------------------
     // Interrupter Register
     //---------------------------------------------------------
-    wire [31:0] rd_interrupter_offset = offset - OFFSET_RT_REG - 32'h20;
+    wire [31:0] rd_interrupter_offset = offset - 32'h2020;
     wire [2:0]  rd_interrupter_index  = rd_interrupter_offset[7:5];
     wire [2:0]  rd_interrupter_data   = rd_interrupter_offset[4:2];
-    wire [31:0] wr_interrupter_offset = wr_offset - OFFSET_RT_REG - 32'h20;
+    wire [31:0] wr_interrupter_offset = wr_offset - 32'h2020;
     wire [2:0]  wr_interrupter_index  = wr_interrupter_offset[7:5];
     wire [2:0]  wr_interrupter_data   = wr_interrupter_offset[4:2];
 
@@ -126,7 +165,7 @@ module xhci_bar0_impl_2(
     // Device Connect 
     //---------------------------------------------------------
 
-    localparam DC_START_CONNECT_COUNT = 32'd1250000000 * 32'd20;
+    localparam DC_START_CONNECT_COUNT = 32'd10000000;
     
     // STATE
     localparam DC_STATE_WAIT  = 6'h0;
@@ -140,13 +179,16 @@ module xhci_bar0_impl_2(
     reg [5:0]  dc_state;        //状態管理
     reg [31:0] dc_time_counter; //デバイス接続処理開始までのカウント
 
+    reg dbg_have_hit_doorbell;
+    reg dbg_have_update_cr;
+
     //---------------------------------------------------------
     // Enable Slot Task
     //---------------------------------------------------------
 
     IfEnableSlot if_enable_slot();
 
-    wire [4:0] enable_slot_index = if_enable_slot.target_index;
+    wire [4:0] enable_slot_index = if_enable_slot.target_index * 4;
 
     //---------------------------------------------------------
     // Port Reset Handler
@@ -169,14 +211,32 @@ module xhci_bar0_impl_2(
     wire [73:0] set_ep_tr_ptr_trsr; //transfer ring -> slot_context
     wire [73:0] set_ep_tr_ptr;      //mux -> slot_context
 
+    //---------------------------------------------------------
+    // debug
+    //---------------------------------------------------------
+
+    reg  [31:0] dbg_status;
+    
+    reg  [73:0] dbg_set_ep_tr_ptr;
+
+    wire [63:0] dbg_cr_ptr;
+    wire [63:0] dbg_tr_ptr;
+    wire [63:0] dbg_ev_ptr = dbg_evt_ring.ptr;
+
+    wire        dbg_cr_pending;
+    wire        dbg_tr_pending;
+    wire        dbg_ev_pending = dbg_evt_ring.pending_request;
+
+    assign dbg_evt_ring.status = dbg_status[2];
+
     command_ring i_command_ring(
         .rst                      ( rst                      ),
         .clk                      ( clk                      ),
         .trigger                  ( command_ring_trigger     ),
-        .read_out                 ( mem_rd_out_1             ),
-        .read_out_2               ( mem_rd_out_4             ),
-        .write_out                ( mem_wr_out_1             ),
-        .write_out_2              ( mem_wr_out_3             ),
+        .read_out                 ( mem_rd_out_2             ),
+        .read_out_2               ( mem_rd_out_5             ),
+        .write_out                ( mem_wr_out_2             ),
+        .write_out_2              ( mem_wr_out_4             ),
         .state                    ( command_ring_state       ),
         .update_dequeue_pointer   ( update_dequeue_pointer   ),
         .new_command_ring_pointer ( if_op_reg.crcr[63:6]     ),
@@ -186,7 +246,10 @@ module xhci_bar0_impl_2(
         .slot_ctx_in              ( if_slot_ctx.sink         ),
         .control_enabled_slot     ( control_enabled_slot     ),
         .ctrl_update_slot_ctx_ptr ( ctrl_update_slot_ctx_ptr ),
-        .set_ep_tr_ptr_out        ( set_ep_tr_ptr_cmdr       )
+        .set_ep_tr_ptr_out        ( set_ep_tr_ptr_cmdr       ),
+        .dbg_pending_request      ( dbg_cr_pending           ),
+        .dbg_cr_ptr               ( dbg_cr_ptr               ),
+        .dbg_status_cr            ( dbg_status[0]            )
     );
 
     //---------------------------------------------------------
@@ -221,21 +284,33 @@ module xhci_bar0_impl_2(
     reg [7:0]  tr_ep_id;
     reg [15:0] tr_stream_id;
 
-    wire [31:0] db_offset = wr_offset - OFFSET_DB;
+    wire [31:0] db_offset = wr_offset - 32'h3000;
     wire [7:0]  db_index  = db_offset[9:2];
+
+    wire [3:0] dbg_tr_state;
+    wire [3:0] dbg_tr_sub_task_type;
+    wire [4:0] dbg_tr_sub_task_state;
+    wire [7:0] dbg_ep_id;
 
     transfer_ring i_transfer_ring(
         .rst                      ( rst                    ),
         .clk                      ( clk                    ),
         .trigger                  ( tr_trigger             ),
-        .read_out                 ( mem_rd_out_3           ),
-        .write_out                ( mem_wr_out_2           ),
+        .read_out                 ( mem_rd_out_4           ),
+        .write_out                ( mem_wr_out_3           ),
         .event_ring_out           ( event_ring_req_3       ),
         .slot_id_in               ( tr_slot_id             ),
         .ep_id_in                 ( tr_ep_id               ),
         .stream_id_in             ( tr_stream_id           ),
         .i_slot_ctx               ( if_slot_ctx.sink       ),
-        .set_ep_tr_ptr_out        ( set_ep_tr_ptr_trsr     )
+        .set_ep_tr_ptr_out        ( set_ep_tr_ptr_trsr     ),
+        .dbg_pending_request      ( dbg_tr_pending         ),
+        .dbg_tr_ptr               ( dbg_tr_ptr             ),
+        .dbg_status_tr            ( dbg_status[1]          ),
+        .dbg_state                ( dbg_tr_state           ),
+        .dbg_sub_task_type        ( dbg_tr_sub_task_type   ),
+        .dbg_sub_task_state       ( dbg_tr_sub_task_state  ),
+        .dbg_ep_id                ( dbg_ep_id              )
     );
 
     task init_port_register;
@@ -268,30 +343,30 @@ module xhci_bar0_impl_2(
 
             //PORTPMSC
             if (index & 32'hF0) begin //USB3
-                port_regs[index].PORTPMSC[7:0]   <= 8'h0; //U1 Timeout - RWS
-                port_regs[index].PORTPMSC[15:8]  <= 8'h0; //U2 Timeout - RWS
-                port_regs[index].PORTPMSC[16]    <= 1'b0; //Force Link PM Accept - RW
+                port_regs[index + 1].PORTPMSC[7:0]   <= 8'h0; //U1 Timeout - RWS
+                port_regs[index + 1].PORTPMSC[15:8]  <= 8'h0; //U2 Timeout - RWS
+                port_regs[index + 1].PORTPMSC[16]    <= 1'b0; //Force Link PM Accept - RW
             end else begin //USB2
-                port_regs[index].PORTPMSC[2:0]   <= 3'h0; //L1 Status - RO
-                port_regs[index].PORTPMSC[3]     <= 1'b0; //Remote Wake Enable - RW
-                port_regs[index].PORTPMSC[7:4]   <= 4'h0; //Best Effort Service Latency - RW
-                port_regs[index].PORTPMSC[15:8]  <= 8'h0; //L1 Device Slot - RW
-                port_regs[index].PORTPMSC[16]    <= 1'b0; //Hardware LPM Enable - RW
-                port_regs[index].PORTPMSC[31:28] <= 4'h0; //Port Teset Control - RW
+                port_regs[index + 1].PORTPMSC[2:0]   <= 3'h0; //L1 Status - RO
+                port_regs[index + 1].PORTPMSC[3]     <= 1'b0; //Remote Wake Enable - RW
+                port_regs[index + 1].PORTPMSC[7:4]   <= 4'h0; //Best Effort Service Latency - RW
+                port_regs[index + 1].PORTPMSC[15:8]  <= 8'h0; //L1 Device Slot - RW
+                port_regs[index + 1].PORTPMSC[16]    <= 1'b0; //Hardware LPM Enable - RW
+                port_regs[index + 1].PORTPMSC[31:28] <= 4'h0; //Port Teset Control - RW
             end
 
             //PORTLI
             if (index & 32'hF0) begin //USB3
-                port_regs[index].PORTLI[15:0]   <= 16'h0; //Link Error Count - RW
-                port_regs[index].PORTLI[19:16]  <= 4'h0; //Rx Lane Count - RO
-                port_regs[index].PORTLI[23:20]  <= 4'h0; //Tx Lane Count - RO
+                port_regs[index + 2].PORTLI[15:0]   <= 16'h0; //Link Error Count - RW
+                port_regs[index + 2].PORTLI[19:16]  <= 4'h0; //Rx Lane Count - RO
+                port_regs[index + 2].PORTLI[23:20]  <= 4'h0; //Tx Lane Count - RO
             end
 
             //PORTHLPMC
             if (!(index & 32'hF0)) begin //USB2
-                port_regs[index].PORTHLPMC[1:0]    <= 2'h0; //Host Initiated Resume Duration Mode - RWS
-                port_regs[index].PORTHLPMC[9:2]    <= 8'h0; //L1 Timeout - RWS
-                port_regs[index].PORTHLPMC[13:10]  <= 4'h0; //Best Effort Service Latency Deep - RWS
+                port_regs[index + 3].PORTHLPMC[1:0]    <= 2'h0; //Host Initiated Resume Duration Mode - RWS
+                port_regs[index + 3].PORTHLPMC[9:2]    <= 8'h0; //L1 Timeout - RWS
+                port_regs[index + 3].PORTHLPMC[13:10]  <= 4'h0; //Best Effort Service Latency Deep - RWS
             end
         end
     endtask
@@ -324,23 +399,24 @@ module xhci_bar0_impl_2(
             if_op_reg.crcr = 64'h0;
             if_op_reg.dcbaap = 64'h0;
             if_op_reg.cfg = 32'h0;
-
-            for (int i = 0; i < NUM_PORTS; i++) begin
-                init_port_register(i);
-            end
+            //Reset Port Registers (USB2)
+            init_port_register(0);
+            init_port_register(1);
+            init_port_register(2);
+            init_port_register(3);
+            //Reset Port Registers (USB3)
+            init_port_register(4);
+            init_port_register(5);
+            init_port_register(6);
+            init_port_register(7);
 
             if_rt_reg.mf_index = 32'h0;
+            if_db_reg.db_regs = 256'h0;
 
             //Clear Interrupter Registers
-            for (int i = 0; i < NUM_INTERRUPTERS; i++) begin
+            for (int i = 0; i < 8; i++) begin
                 reset_interrupter_register(i);
             end
-
-            //---------------------------------------------------------
-            // Device Connect 
-            //---------------------------------------------------------
-            dc_state        <= DC_STATE_WAIT;
-            dc_time_counter <= 32'h0;
 
             //Vendor Defined Capability + USB Debug Capability
 
@@ -560,6 +636,20 @@ module xhci_bar0_impl_2(
         end
     endtask
 
+    task read_port_register;
+        begin
+            if (rd_port_reg_data == 2'h0) begin //PORTSC
+                rd_rsp_data <= port_regs[rd_port_reg_index].portsc;
+            end else if (rd_port_reg_data == 2'h1) begin
+                rd_rsp_data <= port_regs[rd_port_reg_index].PORTPMSC;
+            end else if (rd_port_reg_data == 2'h2) begin
+                rd_rsp_data <= port_regs[rd_port_reg_index].PORTLI;
+            end else if (rd_port_reg_data == 2'h3) begin
+                rd_rsp_data <= port_regs[rd_port_reg_index].PORTHLPMC;
+            end
+        end
+    endtask
+
     always @ ( posedge clk ) begin
         if (rst) begin
             drd_req_ctx   <= 0;
@@ -570,8 +660,6 @@ module xhci_bar0_impl_2(
             dwr_be <= 0;
             dwr_data <= 0;
             dwr_valid <= 0;
-
-            pm_wake <= 1'b0;
 
             event_ring_send <= 1'b0;
             event_ring_has_request <= 1'b0;
@@ -584,10 +672,47 @@ module xhci_bar0_impl_2(
             mf_index_counter <= 13'h0;
 
             //---------------------------------------------------------
+            // Memory Write FIFO TEST
+            //---------------------------------------------------------
+            mwr_ctrl      <= 32'h0;
+            mwr_addr      <= 64'h0;
+            mwr_length    <= 32'h0;
+            mwr_has_data  <= 1'b0;
+            mwr_fifo_in   <= 128'h0;
+            mwr_fifo_en   <= 1'b0;
+            mwr_fifo_done <= 1'b0;
+
+            //---------------------------------------------------------
+            // Memory Read Test Module
+            //---------------------------------------------------------
+            mrd_ctrl <= 32'h0;
+            mrd_addr <= 64'h0;
+            mrd_length <= 32'h0;
+            mrd_has_request <= 1'b0;
+            mrd_fifo_en <= 1'b0;
+
+            for (int i = 0; i < 8; i++) begin
+                mrd_data_stack[i] <= 128'h0;
+            end
+
+            //---------------------------------------------------------
             // Interrupter Controller (PREFIX: ic_)
             //---------------------------------------------------------
             ic_interrupter_enabled <= 1'b0;
             ic_interrupter_index <= 3'b0;
+
+            //---------------------------------------------------------
+            // Device Connect 
+            //---------------------------------------------------------
+            dc_state        <= DC_STATE_WAIT;
+            dc_time_counter <= 32'h0;
+
+            //---------------------------------------------------------
+            // DEBUG
+            //---------------------------------------------------------
+
+            dbg_have_hit_doorbell <= 1'b0;
+            dbg_have_update_cr    <= 1'b0;
 
             //---------------------------------------------------------
             // Port Reset Handler
@@ -619,8 +744,10 @@ module xhci_bar0_impl_2(
             dwr_data <= wr_data;
             dwr_valid <= wr_valid;
 
-            if (pm_wake)
-                pm_wake <= 1'b0; //clear wake signal
+            if (set_ep_tr_ptr[0]) begin
+                dbg_set_ep_tr_ptr <= set_ep_tr_ptr;
+                dbg_status[3] <= 1'b1;
+            end
 
             if (if_op_reg.usb_cmd[0]) begin
                 if (mf_index_counter == 13'd7813) begin
@@ -643,6 +770,7 @@ module xhci_bar0_impl_2(
                     command_ring_pointer_update <= 2'b10;
                 end
                 2'b10: begin
+                    dbg_have_update_cr <= 1'b1;
                     command_ring_pointer_update <= 2'b00;
                 end
             endcase
@@ -655,6 +783,78 @@ module xhci_bar0_impl_2(
             if (interrupter_controller_out.set_event_interrupt) begin
                 if_op_reg.usb_sts[3] <= 1'b1;
             end
+
+            //---------------------------------------------------------
+            // Memory Write FIFO TEST
+            //---------------------------------------------------------
+            //trigger bit
+            if (mwr_ctrl[0]) begin
+                mwr_ctrl[0] <= 1'b0;
+                mwr_ctrl[1] <= 1'b1;
+                //mwr_ctrl[5:3] <= 3'd1;
+                mwr_ctrl[21:12] <= 10'd1;
+                mwr_ctrl[10] <= 1'b1;
+                mwr_has_data <= 1'b1;
+            end
+            //running bit
+            if (mwr_ctrl[1]) begin
+                if (mem_wr_out_1.state == WR_DATA_INIT) begin
+                    if (mwr_ctrl[21:12] != 10'd0) begin
+                        if (mwr_ctrl[21:12] == 10'd35) begin
+                            mwr_fifo_en <= 1'b0;
+                            mwr_fifo_in <= 128'h0;
+                            mwr_fifo_done <= 1'b1;
+                            mwr_ctrl[21:12] <= 10'd0;
+                        end else begin
+                            mwr_fifo_en <= 1'b1;
+                            mwr_fifo_in <= { 118'hFFFF_FFFF_FFFF_FFFF_3FFF_FFFF_FFFF_FF, mwr_ctrl[21:12] };
+                            mwr_ctrl[21:12] <= mwr_ctrl[21:12] + 10'd1;
+                        end
+                    end
+                end
+
+                if (mem_wr_out_1.state == WR_COMPLETE) begin
+                    mwr_ctrl[1] <= 1'b0;
+                    mwr_ctrl[2] <= 1'b1;
+                    mwr_has_data <= 1'b0;
+                end
+            end
+            mwr_ctrl[9:6] <= mem_wr_out_1.state;
+
+            //---------------------------------------------------------
+            // Memory Read TEST
+            //---------------------------------------------------------
+
+            if (mrd_ctrl[0]) begin
+                mrd_ctrl[0] <= 1'b0;//start
+                mrd_ctrl[1] <= 1'b1;//running
+                
+                mrd_has_request <= 1'b1;
+            end
+            if (mrd_ctrl[1]) begin
+                if (mem_rd_out_3.state == RD_COMPLETE) begin
+                    if (!mrd_ctrl[11]) begin //sent delay
+                        mrd_fifo_en <= 1'b1;
+                        mrd_ctrl[11] <= 1'b1;
+                    end else begin
+                        mrd_data_stack[mrd_ctrl[9:7]] <= mem_rd_out_3.dout;
+                        mrd_ctrl[9:7] <= mrd_ctrl[9:7] + 3'd1;
+                        if (mrd_ctrl[9:7] == 3'd7) begin
+                            mrd_ctrl[1] <= 1'b0;
+                            mrd_ctrl[2] <= 1'b1;
+                            mrd_ctrl[11] <= 1'b0;
+                            mrd_has_request <= 1'b0;
+                            mrd_fifo_en <= 1'b0;
+                        end
+                    end
+                end
+            end
+            if (mrd_ctrl[10]) begin
+                for (int i = 0; i < 8; i++) begin
+                    mrd_data_stack[i] <= 128'h0;
+                end
+            end
+            mrd_ctrl[6:3] <= mem_rd_out_3.state;
             
             //---------------------------------------------------------
             // Interrupter Controller (PREFIX: ic_)
@@ -672,14 +872,12 @@ module xhci_bar0_impl_2(
             case (dc_state)
                 DC_STATE_WAIT: begin
                     if (if_op_reg.usb_cmd[0] && if_op_reg.usb_cmd[2]) begin
-                        if (dc_time_counter >= DC_START_CONNECT_COUNT) begin
-                            dc_time_counter <= 32'h0;
-                            dc_state <= DC_STATE_START;
-                        end else begin
-                            dc_time_counter <= dc_time_counter + 32'h1;
-                        end
-                    end else begin
-                        dc_time_counter <= 32'h0;
+                        // if (dc_time_counter >= DC_START_CONNECT_COUNT) begin
+                        //     dc_time_counter <= 32'h0;
+                        //     dc_state <= DC_STATE_START;
+                        // end else begin
+                        //     dc_time_counter <= dc_time_counter + 32'h1;
+                        // end
                     end
                 end
                 DC_STATE_START: begin
@@ -734,6 +932,8 @@ module xhci_bar0_impl_2(
 
             case(port_reset_state)
                 PR_STATE_START: begin
+                    port_reset_state <= 1'b0;
+
                     if_op_reg.usb_sts[4] <= 1'b1; //Port Change Detect
 
                     port_regs[port_reset_index].portsc.PR  <= 1'b0;  //Port Reset
@@ -792,42 +992,74 @@ module xhci_bar0_impl_2(
                 tr_stream_id <= 16'h0;
             end
 
+            //---------------------------------------------------------
+            // debug
+            //---------------------------------------------------------
+
+            if (dbg_cr_pending) begin
+                dbg_status[0] <= 1'b1;
+            end
+            if (dbg_tr_pending) begin
+                dbg_status[1] <= 1'b1;
+            end
+            if (dbg_ev_pending) begin
+                dbg_status[2] <= 1'b1;
+            end
+
             if (drd_req_valid) begin
                 case (offset)
                     //eXtensible Host Controller Capability Registers (0x0) RO
-                    32'h00000000 : rd_rsp_data <= {
-                        HCI_VERSION_NUM,
-                        8'h0,
-                        OFFSET_OP_REG[7:0]
-                    }; //Capability Register Length
-                    32'h00000004 : rd_rsp_data <= {
-                        NUM_PORTS,
-                        5'h0,
-                        NUM_INTERRUPTERS,
-                        NUM_DEVICE_SLOTS
-                    }; //Structural Parameters 1
+                    32'h00000000 : rd_rsp_data <= 32'h01000080; //Capability Register Length
+                    32'h00000004 : rd_rsp_data <= 32'h08000820; //Structural Parameters 1
                     32'h00000008 : rd_rsp_data <= 32'hFC000054; //Structural Parameters 2
                     32'h0000000C : rd_rsp_data <= 32'h00040001; //Structural Parameters 3
-                    32'h00000010 : rd_rsp_data <= {
-                        OFFSET_EXT_CAP[17:2],
-                        16'h71E1
-                    }; //Capability Parameters 1
-                    32'h00000014 : rd_rsp_data <= OFFSET_DB; //Doorbell Offset
-                    32'h00000018 : rd_rsp_data <= OFFSET_RT_REG; //Runtime Register Space Offset
+                    32'h00000010 : rd_rsp_data <= 32'h200071E1; //Capability Parameters 1
+                    32'h00000014 : rd_rsp_data <= 32'h00003000; //Doorbell Offset
+                    32'h00000018 : rd_rsp_data <= 32'h00002000; //Runtime Register Space Offset
                     32'h0000001C : rd_rsp_data <= 32'h00000000; //Capability Parameters 2
-
                     //Host Controller Operational Registers (0x80)
-                    OFFSET_OP_REG          : rd_rsp_data <= if_op_reg.usb_cmd;
-                    OFFSET_OP_REG + 32'h04 : rd_rsp_data <= if_op_reg.usb_sts;
-                    OFFSET_OP_REG + 32'h08 : rd_rsp_data <= 32'h00000001; //Page Size Register : RO
-                    OFFSET_OP_REG + 32'h14 : rd_rsp_data <= if_op_reg.dnctrl;
-                    OFFSET_OP_REG + 32'h18 : rd_rsp_data <= if_op_reg.crcr[31:0];
-                    OFFSET_OP_REG + 32'h1C : rd_rsp_data <= if_op_reg.crcr[63:32];
-                    OFFSET_OP_REG + 32'h30 : rd_rsp_data <= if_op_reg.dcbaap[31:0];
-                    OFFSET_OP_REG + 32'h34 : rd_rsp_data <= if_op_reg.dcbaap[63:32];
-                    OFFSET_OP_REG + 32'h38 : rd_rsp_data <= if_op_reg.cfg;
+                    32'h00000080 : rd_rsp_data <= if_op_reg.usb_cmd;
+                    32'h00000084 : rd_rsp_data <= if_op_reg.usb_sts;
+                    32'h00000088 : rd_rsp_data <= 32'h00000001; //Page Size Register : RO
+                    32'h00000094 : rd_rsp_data <= if_op_reg.dnctrl;
+                    32'h00000098 : rd_rsp_data <= if_op_reg.crcr[31:0];
+                    32'h0000009C : rd_rsp_data <= if_op_reg.crcr[63:32];
+                    32'h000000B0 : rd_rsp_data <= if_op_reg.dcbaap[31:0];
+                    32'h000000B4 : rd_rsp_data <= if_op_reg.dcbaap[63:32];
+                    32'h000000B8 : rd_rsp_data <= if_op_reg.cfg;
+                    32'h00002000 : rd_rsp_data <= if_rt_reg.mf_index;
 
-                    OFFSET_RT_REG : rd_rsp_data <= if_rt_reg.mf_index;
+                    32'h00004000 : rd_rsp_data <= {
+                        1'h0,
+                        dbg_tr_sub_task_state, //[30:26]
+                        dbg_tr_sub_task_type,  //[25:22]
+                        dbg_tr_state,          //[21:18]
+                        port_reset_state,      //[17:13]
+                        dbg_have_update_cr,    //[12]
+                        dbg_have_hit_doorbell, //[11]
+                        command_ring_state,    //[10:6]
+                        dc_state               //[5:0]
+                    };
+                    32'h00004004 : rd_rsp_data <= dc_time_counter;
+                    32'h00004008 : rd_rsp_data <= dbg_status;
+                    32'h0000400C : rd_rsp_data <= {
+                        24'h0,
+                        dbg_ep_id
+                    };
+
+                    32'h00004010 : rd_rsp_data <= dbg_cr_ptr[31:0];
+                    32'h00004014 : rd_rsp_data <= dbg_cr_ptr[63:32];
+                    32'h00004018 : rd_rsp_data <= dbg_tr_ptr[31:0];
+                    32'h0000401C : rd_rsp_data <= dbg_tr_ptr[63:32];
+                    32'h00004020 : rd_rsp_data <= dbg_ev_ptr[31:0];
+                    32'h00004024 : rd_rsp_data <= dbg_ev_ptr[63:32];
+
+                    32'h00004030 : rd_rsp_data <= dbg_set_ep_tr_ptr[31:0];
+                    32'h00004034 : rd_rsp_data <= dbg_set_ep_tr_ptr[63:32];
+                    32'h00004038 : rd_rsp_data <= {
+                        22'h0,
+                        dbg_set_ep_tr_ptr[73:64]
+                    };
 
                     //Extended Capability Registers
                     //xHCI Supported Protocol Capability 1
@@ -851,19 +1083,21 @@ module xhci_bar0_impl_2(
 
                     default : rd_rsp_data <= 32'h0;
                 endcase
-                if (rd_port_reg) begin
-                    if (rd_port_reg_data == 2'h0) begin //PORTSC
-                        rd_rsp_data <= port_regs[rd_port_reg_index].portsc;
-                    end else if (rd_port_reg_data == 2'h1) begin
-                        rd_rsp_data <= port_regs[rd_port_reg_index].PORTPMSC;
-                    end else if (rd_port_reg_data == 2'h2) begin
-                        rd_rsp_data <= port_regs[rd_port_reg_index].PORTLI;
-                    end else if (rd_port_reg_data == 2'h3) begin
-                        rd_rsp_data <= port_regs[rd_port_reg_index].PORTHLPMC;
-                    end
-                end
-                
-                if ((OFFSET_RT_REG + 32'h20 <= offset) && (offset < OFFSET_RT_REG + 32'h20 + 32'h20 * NUM_INTERRUPTERS)) //Runtime Registers->Interrupter Register Set[index]
+                if ((32'h20 <= offset) && (offset < 32'h80))
+                    rd_rsp_data <= 32'h0;
+                else if ((32'h8C <= offset) && (offset < 32'h94))
+                    rd_rsp_data <= 32'h0;
+                else if ((32'hA0 <= offset) && (offset < 32'hB0))
+                    rd_rsp_data <= 32'h0;
+                else if ((32'hBC <= offset) && (offset < 32'h480))
+                    rd_rsp_data <= 32'h0;
+                else if (rd_port_reg)
+                    read_port_register();
+                else if ((32'h500 <= offset) && (offset < 32'h2000))
+                    rd_rsp_data <= 32'h0;
+                else if ((32'h2004 <= offset) && (offset < 32'h2020))
+                    rd_rsp_data <= 32'h0;
+                else if ((32'h2020 <= offset) && (offset < 32'h2120)) //Runtime Registers->Interrupter Register Set[index]
                     case (rd_interrupter_data)
                         3'd0: rd_rsp_data <= {
                                 30'h0,
@@ -891,80 +1125,95 @@ module xhci_bar0_impl_2(
                             };
                         3'd7: rd_rsp_data <= if_rt_reg.interrupters[rd_interrupter_index].event_ring_dequeue_pointer[59:28];
                     endcase
+                else if ((32'h3000 <= offset) && (offset < 32'h3800)) //Doorbell Registears
+                    rd_rsp_data <= 32'h0;
                 else if ((32'h8040 <= offset) && (offset < 32'h8380))
                     rd_rsp_data <= if_ex_cap.vd_cap[(offset - 32'h8040) / 4];
             end
 
             if (dwr_valid) begin
-                if (wr_offset == OFFSET_DB) begin
-                    command_ring_trigger <= 1'b1;
+                if (wr_offset == 32'h4000) begin
+                    if (dwr_data[6]) begin
+                        dc_state <= DC_STATE_START;
+                    end
                 end
 
-                if (wr_offset == OFFSET_DB + 32'h4) begin
+                if (wr_offset == 32'h4008) begin
+                    if (dwr_data[0]) begin
+                        dbg_status[0] <= 1'b0;
+                    end
+                    if (dwr_data[1]) begin
+                        dbg_status[1] <= 1'b0;
+                    end
+                    if (dwr_data[2]) begin
+                        dbg_status[2] <= 1'b0;
+                    end
+                    if (dwr_data[3]) begin
+                        dbg_status[3] <= 1'b0;
+                    end
+                end
+
+                if (wr_offset == 32'h3000) begin
+                    command_ring_trigger <= 1'b1;
+                    dbg_have_hit_doorbell <= 1'b1;
+                end
+
+                if (wr_offset == 32'h3004) begin
                     tr_trigger   <= 1'b1;
                     tr_slot_id   <= db_index;
                     tr_ep_id     <= dwr_data[7:0];
                     tr_stream_id <= dwr_data[31:16];
                 end
 
-                case (wr_offset)
-                    OFFSET_OP_REG         : begin
-                        if ((if_op_reg.usb_cmd[0] == 1'h0) && dwr_data[0]) begin //RUN/STOP 0 => 1
-                            if_op_reg.usb_sts[0] <= 1'h0;
-                            if_op_reg.usb_cmd[0] <= 1'h1;
-                        end else if (if_op_reg.usb_cmd[0] && (dwr_data[0] == 1'h0)) begin //RUN/STOP 1 =>0
-                            if_op_reg.usb_sts[0] <= 1'h1;
-                            if_op_reg.usb_cmd[0] <= 1'h0;
-                        end
-                        if ((if_op_reg.usb_cmd[1] == 1'h0) && dwr_data[1]) begin //Host Controller Reset
-                            reset_xhci();
-                        end
-                        if_op_reg.usb_cmd[3:2] <= dwr_data[3:2]; //RW
-                        if_op_reg.usb_cmd[7] <= dwr_data[7]; //RW
-                        if_op_reg.usb_cmd[11:8] <= dwr_data[11:8]; //RW
-                        if_op_reg.usb_cmd[15:13] <= dwr_data[15:13]; //RW
-                        if_op_reg.usb_cmd[16] <= dwr_data[16]; //RW
+                if (wr_offset == 32'h80) begin //USB CMD
+                    if ((if_op_reg.usb_cmd[0] == 1'h0) && dwr_data[0]) begin //RUN/STOP 0 => 1
+                        if_op_reg.usb_sts[0] <= 1'h0;
+                        if_op_reg.usb_cmd[0] <= 1'h1;
+                    end else if (if_op_reg.usb_cmd[0] && (dwr_data[0] == 1'h0)) begin //RUN/STOP 1 =>0
+                        if_op_reg.usb_sts[0] <= 1'h1;
+                        if_op_reg.usb_cmd[0] <= 1'h0;
                     end
-                    OFFSET_OP_REG + 32'h04: begin
-                        if (dwr_data[2])//Host System Error(HSE) - RW1C
-                            if_op_reg.usb_sts[2] <= 1'h0;
-                        if (dwr_data[3])//Event Interrupt(EINT) - RW1C
-                            if_op_reg.usb_sts[3] <= 1'h0;
-                        if (dwr_data[4])//Port Change Detect(PCD) - RW1C
-                            if_op_reg.usb_sts[4] <= 1'h0;
-                        if (dwr_data[10])//Save/Restore Error(SRE) RW1C
-                            if_op_reg.usb_sts[10] <= 1'h0;
+                    if ((if_op_reg.usb_cmd[1] == 1'h0) && dwr_data[1]) begin //Host Controller Reset
+                        reset_xhci();
                     end
-                    OFFSET_OP_REG + 32'h14: begin
-                        if_op_reg.dnctrl[15:0] <= dwr_data[15:0];
-                    end
-                    OFFSET_OP_REG + 32'h18: begin
-                        if_op_reg.crcr[0] <= dwr_data[0];
-                        if (dwr_data[1]) //Command Stop - RW1S
-                            if_op_reg.crcr[1] <= 1'h1;
-                        if (dwr_data[2]) //Command Abort - RW1S
-                            if_op_reg.crcr[2] <= 1'h1;
-                        if (if_op_reg.crcr[31:6] != dwr_data[31:6]) begin
-                            if_op_reg.crcr[31:6] <= dwr_data[31:6]; // Command Ring Pointer - RW
-                            command_ring_pointer_update <= 2'b01;
-                        end
-                    end
-                    OFFSET_OP_REG + 32'h1C: begin
-                        if_op_reg.crcr[63:32] <= dwr_data;
+                    if_op_reg.usb_cmd[3:2] <= dwr_data[3:2]; //RW
+                    if_op_reg.usb_cmd[7] <= dwr_data[7]; //RW
+                    if_op_reg.usb_cmd[11:8] <= dwr_data[11:8]; //RW
+                    if_op_reg.usb_cmd[15:13] <= dwr_data[15:13]; //RW
+                    if_op_reg.usb_cmd[16] <= dwr_data[16]; //RW
+                end else if (wr_offset == 32'h84) begin //USB STATUS
+                    //if_op_reg.usb_sts <= (dwr_data & ~32'h1) | (if_op_reg.usb_sts & 32'h1);
+                    if (dwr_data[2])//Host System Error(HSE) - RW1C
+                        if_op_reg.usb_sts[2] <= 1'h0;
+                    if (dwr_data[3])//Event Interrupt(EINT) - RW1C
+                        if_op_reg.usb_sts[3] <= 1'h0;
+                    if (dwr_data[4])//Port Change Detect(PCD) - RW1C
+                        if_op_reg.usb_sts[4] <= 1'h0;
+                    if (dwr_data[10])//Save/Restore Error(SRE) RW1C
+                        if_op_reg.usb_sts[10] <= 1'h0;
+                end else if (wr_offset == 32'h94) begin //Device Notification Control Register
+                    if_op_reg.dnctrl[15:0] <= dwr_data[15:0];
+                end else if (wr_offset == 32'h98) begin //Command Ring Control Register
+                    //if_op_reg.crcr[31:0] <= dwr_data;
+                    if_op_reg.crcr[0] <= dwr_data[0];
+                    if (dwr_data[1]) //Command Stop - RW1S
+                        if_op_reg.crcr[1] <= 1'h1;
+                    if (dwr_data[2]) //Command Abort - RW1S
+                        if_op_reg.crcr[2] <= 1'h1;
+                    if (if_op_reg.crcr[31:6] != dwr_data[31:6]) begin
+                        if_op_reg.crcr[31:6] <= dwr_data[31:6]; // Command Ring Pointer - RW
                         command_ring_pointer_update <= 2'b01;
                     end
-                    OFFSET_OP_REG + 32'h30: begin
-                        if_op_reg.dcbaap[31:6] <= dwr_data[31:6];
-                    end
-                    OFFSET_OP_REG + 32'h34: begin
-                        if_op_reg.dcbaap[63:32] <= dwr_data;
-                    end
-                    OFFSET_OP_REG + 32'h38: begin
-                        if_op_reg.cfg[9:0] <= dwr_data[9:0]; //RW
-                    end
-                endcase
-
-                if (wr_port_reg) begin //port registers
+                end else if (wr_offset == 32'h9C) begin //Command Ring Control Register LOWER
+                    if_op_reg.crcr[63:32] <= dwr_data;
+                    command_ring_pointer_update <= 2'b01;
+                end else if (wr_offset == 32'hB0) begin
+                    if_op_reg.dcbaap[31:6] <= dwr_data[31:6];
+                end else if (wr_offset == 32'hB4) begin
+                    if_op_reg.dcbaap[63:32] <= dwr_data;
+                end else if (wr_offset == 32'hB8) begin //Configure Register
+                    if_op_reg.cfg[9:0] <= dwr_data[9:0]; //RW
+                end else if (wr_port_reg) begin //port registers
                     case (wr_port_reg_data)
                         2'h0: begin // PORTSC
                             if (dwr_data[1]) // Port Enable/Disabled - RW1CS
@@ -998,12 +1247,8 @@ module xhci_bar0_impl_2(
                             port_regs[wr_port_reg_index].portsc.WCE <= dwr_data[25]; // Wake on Connect Enable - RWS
                             port_regs[wr_port_reg_index].portsc.WDE <= dwr_data[26]; // Wake on Disconnect Event - RWS
                             port_regs[wr_port_reg_index].portsc.WOE <= dwr_data[27]; // Wake on Over-current Enable - RWS
-                            if (dwr_data[31]) begin // Warm Port Reset - RW1S/RsvdZ
+                            if (dwr_data[31]) // Warm Port Reset - RW1S/RsvdZ
                                 port_regs[wr_port_reg_index].portsc.WPR <= 1'b1;
-
-                                port_reset_state <= PR_STATE_START;
-                                port_reset_index <= wr_port_reg_index;
-                            end
                         end
                         2'h1: begin // PORTPMSC
                             port_regs[wr_port_reg_index].PORTPMSC <= dwr_data;
@@ -1015,7 +1260,7 @@ module xhci_bar0_impl_2(
                             port_regs[wr_port_reg_index].PORTHLPMC <= dwr_data;
                         end
                     endcase
-                end else if ((OFFSET_RT_REG + 32'h20 <= wr_offset) && (wr_offset < OFFSET_RT_REG + 32'h20 + 32'h20 * NUM_INTERRUPTERS)) begin //Runtime Registers->Interrupter Register Set[index]
+                end else if ((32'h2020 <= wr_offset) && (wr_offset < 32'h2120)) begin //Runtime Registers->Interrupter Register Set[index]
                     case (wr_interrupter_data)
                         3'd0: begin
                             if (dwr_data[0])
@@ -1052,8 +1297,10 @@ module xhci_bar0_impl_2(
                         end
                     endcase
 
-                end else if (((OFFSET_EXT_CAP + 32'h40) <= wr_offset) && (wr_offset < (OFFSET_EXT_CAP + 32'h380))) begin
-                    integer index = (wr_offset - OFFSET_EXT_CAP - 32'h40) / 4;
+                end else if ((32'h3000 <= wr_offset) && (wr_offset < 32'h3020)) begin
+                    if_db_reg.db_regs[((wr_offset - 32'h3000) * 8 + 31) : ((wr_offset - 32'h3000) * 8)] <= dwr_data;
+                end else if ((32'h8040 <= wr_offset) && (wr_offset < 32'h8380)) begin
+                    integer index = (wr_offset - 32'h8040) / 4;
                     if (dwr_be[0]) if_ex_cap.vd_cap[index][7:0]   <= dwr_data[7:0];
                     if (dwr_be[1]) if_ex_cap.vd_cap[index][15:8]  <= dwr_data[15:8];
                     if (dwr_be[2]) if_ex_cap.vd_cap[index][23:16] <= dwr_data[23:16];
@@ -1103,11 +1350,11 @@ module msix_table_bar2_impl(
         end
     endgenerate
 
-    wire [31:0] rd_addr_offset = drd_req_addr & 32'hFFF;
+    wire [31:0] rd_addr_offset = drd_req_addr & 32'hFFFF;
     wire [2:0] rd_index = rd_addr_offset[6:4];
     wire [1:0] rd_dword = rd_addr_offset[3:2];
 
-    wire [31:0] wr_addr_offset = dwr_addr & 32'hFFF;
+    wire [31:0] wr_addr_offset = dwr_addr & 32'hFFFF;
     wire [2:0] wr_index = wr_addr_offset[6:4];
     wire [1:0] wr_dword = wr_addr_offset[3:2];
     
@@ -1192,8 +1439,8 @@ module msix_pba_bar4_impl(
 
     bit [31:0] msix_pba [3:0];
 
-    wire [31:0] rd_offset = drd_req_addr & 32'hFFF;
-    wire [31:0] wr_offset = dwr_addr & 32'hFFF;
+    wire [31:0] rd_offset = drd_req_addr & 32'hFFFF;
+    wire [31:0] wr_offset = dwr_addr & 32'hFFFF;
 
     always @ ( posedge clk ) begin
         if (rst) begin

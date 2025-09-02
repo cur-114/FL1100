@@ -80,8 +80,6 @@ module pcie_7x_0_pcie_7x # (
   parameter [31:0] BAR3 = 32'hFFFFFFFF,
   parameter [31:0] BAR4 = 32'h00000000,
   parameter [31:0] BAR5 = 32'h00000000,
-  parameter        CFGCOMMANDIOENABLE = 1'b0,
-  parameter        CFGCOMMANDINTERRUPTDISABLE = 1'b1,
   parameter [7:0]  CAPABILITIES_PTR = 8'h40,
   parameter [31:0] CARDBUS_CIS_POINTER = 32'h00000000,
   parameter        CFG_ECRC_ERR_CPLSTAT = 0,

@@ -64,18 +64,25 @@
 VC0_TX_LASTPACKET=29,VC0_RX_RAM_LIMIT=7FF,VC0_TOTAL_CREDITS_PH=4,VC0_TOTAL_CREDITS_PD=64,VC0_TOTAL_CREDITS_NPH=4,VC0_TOTAL_CREDITS_NPD=8,VC0_TOTAL_CREDITS_CH=72,VC0_TOTAL_CREDITS_CD=850,VC0_CPL_INFINITE=TRUE,DEV_CAP_PHANTOM_FUNCTIONS_SUPPORT=0,DEV_CAP_EXT_TAG_SUPPORTED=FALSE,LINK_STATUS_SLOT_CLOCK_CONFIG=TRUE,DISABLE_LANE_REVERSAL=TRUE,DISABLE_SCRAMBLING=FALSE,DSN_CAP_ON=FALSE,REVISION_ID=10,VC_CAP_ON=FALSE}" *)
 (* DowngradeIPIdentifiedWarnings = "yes" *)
 module pcie_7x_0_core_top # (
-
-  parameter         CFG_DEV_ID         = 16'h1100,
   parameter         CFG_VEND_ID        = 16'h1B73,
-
-  parameter [23:0]  CLASS_CODE = 24'h0C0330,
-
+  parameter         CFG_DEV_ID         = 16'h1100,
   parameter         CFG_REV_ID         =  8'h10,
-
-  parameter [7:0]   HEADER_TYPE = 8'h00,
-
   parameter         CFG_SUBSYS_VEND_ID = 16'h1B73,
   parameter         CFG_SUBSYS_ID      = 16'h1100,
+  parameter         PCIE_ID_IF         ="TRUE", 
+
+  parameter         EXT_PIPE_SIM = "FALSE",
+
+  parameter         ALLOW_X8_GEN2 = "FALSE",
+  parameter         PIPE_PIPELINE_STAGES = 1,
+  parameter [11:0]  AER_BASE_PTR = 12'h100,
+  parameter         AER_CAP_ECRC_CHECK_CAPABLE = "TRUE",
+  parameter         AER_CAP_ECRC_GEN_CAPABLE = "TRUE",
+  parameter         AER_CAP_MULTIHEADER = "FALSE",
+  parameter [11:0]  AER_CAP_NEXTPTR = 12'h000,
+  parameter [23:0]  AER_CAP_OPTIONAL_ERR_SUPPORT = 24'h001300,
+  parameter         AER_CAP_ON = "TRUE",
+  parameter         AER_CAP_PERMIT_ROOTERR_UPDATE = "FALSE",
 
   parameter [31:0]  BAR0 = 32'hFFFF0004,
   parameter [31:0]  BAR1 = 32'hFFFFFFFF,
@@ -84,92 +91,85 @@ module pcie_7x_0_core_top # (
   parameter [31:0]  BAR4 = 32'hFFFFF004,
   parameter [31:0]  BAR5 = 32'hFFFFFFFF,
 
-  parameter         MPS_FORCE = "FALSE",
-  //parameter         PCIE_ID_IF         ="TRUE", 
-
-  parameter [5:0]   EXT_CFG_CAP_PTR = 6'h3F,
-  parameter [9:0]   EXT_CFG_XP_CAP_PTR = 10'h3FF,
-
+  parameter         C_DATA_WIDTH = 64,
   parameter [31:0]  CARDBUS_CIS_POINTER = 32'h00000000,
+  parameter [23:0]  CLASS_CODE = 24'h0C0330,
+  parameter         CMD_INTX_IMPLEMENTED = "TRUE",
+  parameter         CPL_TIMEOUT_DISABLE_SUPPORTED = "FALSE",
+  parameter [3:0]   CPL_TIMEOUT_RANGES_SUPPORTED = 4'h1,
+
+  parameter integer DEV_CAP_ENDPOINT_L0S_LATENCY = 6,
+  parameter integer DEV_CAP_ENDPOINT_L1_LATENCY = 6,
+  parameter         DEV_CAP_EXT_TAG_SUPPORTED = "FALSE",
+  parameter integer DEV_CAP_MAX_PAYLOAD_SUPPORTED = 2,
+  parameter integer DEV_CAP_PHANTOM_FUNCTIONS_SUPPORT = 0,
+
+  parameter         DEV_CAP2_ARI_FORWARDING_SUPPORTED = "FALSE",
+  parameter         DEV_CAP2_ATOMICOP32_COMPLETER_SUPPORTED = "FALSE",
+  parameter         DEV_CAP2_ATOMICOP64_COMPLETER_SUPPORTED = "FALSE",
+  parameter         DEV_CAP2_ATOMICOP_ROUTING_SUPPORTED = "FALSE",
+  parameter         DEV_CAP2_CAS128_COMPLETER_SUPPORTED = "FALSE",
+  parameter [1:0]   DEV_CAP2_TPH_COMPLETER_SUPPORTED = 2'b00,
+  parameter         DEV_CONTROL_EXT_TAG_DEFAULT = "TRUE",
+
+  parameter         DISABLE_LANE_REVERSAL = "TRUE",
+  parameter         DISABLE_RX_POISONED_RESP = "FALSE",
+  parameter         DISABLE_SCRAMBLING = "FALSE",
+  parameter [11:0]  DSN_BASE_PTR = 12'h000,
+  parameter [11:0]  DSN_CAP_NEXTPTR = 12'h000,
+  parameter         DSN_CAP_ON = "FALSE",
+
+  parameter [10:0]  ENABLE_MSG_ROUTE = 11'b00000000000,
+  parameter         ENABLE_RX_TD_ECRC_TRIM = "FALSE",
   parameter [31:0]  EXPANSION_ROM = 32'h00000000,
+  parameter [5:0]   EXT_CFG_CAP_PTR = 6'h0A,
+  parameter [9:0]   EXT_CFG_XP_CAP_PTR = 10'h0A,
+  parameter [7:0]   HEADER_TYPE = 8'h00,
   parameter [7:0]   INTERRUPT_PIN = 8'h1,
 
-  parameter         C_DATA_WIDTH = 64,
-  parameter         EXT_PIPE_SIM = "FALSE",
-  parameter         ALLOW_X8_GEN2 = "FALSE",
-  parameter         PIPE_PIPELINE_STAGES = 1,
+  parameter [9:0]   LAST_CONFIG_DWORD = 10'h3FF,
+  parameter         LINK_CAP_ASPM_OPTIONALITY = "FALSE",
+  parameter         LINK_CAP_DLL_LINK_ACTIVE_REPORTING_CAP = "FALSE",
+  parameter         LINK_CAP_LINK_BANDWIDTH_NOTIFICATION_CAP = "FALSE",
+  parameter [3:0]   LINK_CAP_MAX_LINK_SPEED = 4'h2,
+  parameter [5:0]   LINK_CAP_MAX_LINK_WIDTH = 6'h1,
 
-  //cfg space
-  // PM   40
-  // MSI  50
-  // PCIE 70
-  // MSIX B0
-  // AER  100
+  parameter         LINK_CTRL2_DEEMPHASIS = "FALSE",
+  parameter         LINK_CTRL2_HW_AUTONOMOUS_SPEED_DISABLE = "FALSE",
+  parameter [3:0]   LINK_CTRL2_TARGET_LINK_SPEED = 4'h2,
+  parameter         LINK_STATUS_SLOT_CLOCK_CONFIG = "TRUE",
 
-  //FIRST CAP
-  parameter [7:0]   CAPABILITIES_PTR = 8'h40,
+  parameter [14:0]  LL_ACK_TIMEOUT = 15'h0000,
+  parameter         LL_ACK_TIMEOUT_EN = "FALSE",
+  parameter integer LL_ACK_TIMEOUT_FUNC = 0,
+  parameter [14:0]  LL_REPLAY_TIMEOUT = 15'h0000,
+  parameter         LL_REPLAY_TIMEOUT_EN = "FALSE",
+  parameter integer LL_REPLAY_TIMEOUT_FUNC = 1,
 
-  //PCIE CAP
-  parameter         PCIE_CAP_ON = "TRUE",
-  parameter [7:0]   PCIE_BASE_PTR = 8'h70,
-  parameter [7:0]   PCIE_CAP_NEXTPTR = 8'hB0,
-
-  //MSI CAP
+  parameter [5:0]   LTSSM_MAX_LINK_WIDTH = 6'h1,
+  parameter         MSI_CAP_MULTIMSGCAP = 3,
+  parameter         MSI_CAP_MULTIMSG_EXTENSION = 0,
   parameter         MSI_CAP_ON = "TRUE",
-  parameter [7:0]   MSI_BASE_PTR = 8'h50,
-  parameter [7:0]   MSI_CAP_NEXTPTR = 8'h70,
+  parameter         MSI_CAP_PER_VECTOR_MASKING_CAPABLE = "FALSE",
+  parameter         MSI_CAP_64_BIT_ADDR_CAPABLE = "TRUE",
 
-  //MSIX CAP
-  parameter         MSIX_CAP_ON = "TRUE",
-  parameter [7:0]   MSIX_BASE_PTR = 8'hB0,
-  parameter [7:0]   MSIX_CAP_NEXTPTR =8'h00,
+  parameter         MSIX_CAP_ON = "FALSE",
+  parameter         MSIX_CAP_PBA_BIR = 4,
+  parameter [28:0]  MSIX_CAP_PBA_OFFSET = 29'h0,
+  parameter         MSIX_CAP_TABLE_BIR = 2,
+  parameter [28:0]  MSIX_CAP_TABLE_OFFSET = 29'h0,
+  parameter [10:0]  MSIX_CAP_TABLE_SIZE = 11'h000,
 
-  //PM CAP
-  parameter         PM_CAP_ON = "TRUE",
-  parameter [7:0]   PM_BASE_PTR = 8'h40,
-  parameter [7:0]   PM_CAP_NEXTPTR = 8'h50,
+  parameter [3:0]   PCIE_CAP_DEVICE_PORT_TYPE = 4'h0,
+  parameter [7:0]   PCIE_CAP_NEXTPTR = 8'h00,
 
-  //RBAR CAP
-  parameter         RBAR_CAP_ON = "FALSE",
-  parameter [11:0]  RBAR_BASE_PTR = 12'h000,
-  parameter [11:0]  RBAR_CAP_NEXTPTR = 12'h000,
-
-  //VC CAP
-  parameter         VC_CAP_ON = "FALSE",
-  parameter [11:0]  VC_BASE_PTR = 12'h000,
-  parameter [11:0]  VC_CAP_NEXTPTR = 12'h000,
-
-  //DSN CAP
-  parameter         DSN_CAP_ON = "FALSE",
-  parameter [11:0]  DSN_BASE_PTR = 12'h00,
-  parameter [11:0]  DSN_CAP_NEXTPTR = 12'h00,
-
-  //AER CAP
-  parameter         AER_CAP_ON = "TRUE",
-  parameter [11:0]  AER_BASE_PTR = 12'h100,
-  parameter [11:0]  AER_CAP_NEXTPTR = 12'h000,
-
-  //VSEC CAP
-  parameter         VSEC_CAP_ON = "FALSE",
-  parameter [11:0]  VSEC_BASE_PTR = 12'h000,
-  parameter [11:0]  VSEC_CAP_NEXTPTR = 12'h000,
-
-  // CFG SPACE END
-
-  //PM CAP
-  parameter         PM_CAP_VERSION = 3,
-  parameter         PM_CAP_PME_CLOCK = "FALSE",
-  parameter         PM_CAP_AUXCURRENT = 0,
+  parameter         PM_CAP_DSI = "FALSE",
   parameter         PM_CAP_D1SUPPORT = "TRUE",
   parameter         PM_CAP_D2SUPPORT = "FALSE",
+  parameter [7:0]   PM_CAP_NEXTPTR = 8'h48,
   parameter [4:0]   PM_CAP_PMESUPPORT = 5'h0B,
   parameter         PM_CSR_NOSOFTRST = "TRUE",
 
-  parameter         PM_CAP_RSVD_04 = 0,
-  parameter [7:0]   PM_CAP_ID = 8'h01,
-  parameter         PM_CSR_BPCCEN = "FALSE",
-  parameter         PM_CSR_B2B3 = "FALSE",
-  parameter         PM_CAP_DSI = "FALSE",
   parameter [1:0]   PM_DATA_SCALE0 = 2'h0,
   parameter [1:0]   PM_DATA_SCALE1 = 2'h0,
   parameter [1:0]   PM_DATA_SCALE2 = 2'h0,
@@ -178,6 +178,7 @@ module pcie_7x_0_core_top # (
   parameter [1:0]   PM_DATA_SCALE5 = 2'h0,
   parameter [1:0]   PM_DATA_SCALE6 = 2'h0,
   parameter [1:0]   PM_DATA_SCALE7 = 2'h0,
+
   parameter [7:0]   PM_DATA0 = 8'h00,
   parameter [7:0]   PM_DATA1 = 8'h00,
   parameter [7:0]   PM_DATA2 = 8'h00,
@@ -187,125 +188,7 @@ module pcie_7x_0_core_top # (
   parameter [7:0]   PM_DATA6 = 8'h00,
   parameter [7:0]   PM_DATA7 = 8'h00,
 
-  //MSI CAP
-  parameter         MSI_CAP_64_BIT_ADDR_CAPABLE = "TRUE",
-  parameter         MSI_CAP_PER_VECTOR_MASKING_CAPABLE = "FALSE",
-  parameter         MSI_CAP_MULTIMSGCAP = 3,
-
-  parameter         MSI_CAP_MULTIMSG_EXTENSION = 0,
-  parameter [7:0]   MSI_CAP_ID = 8'h05,
-
-  //PCIE CAP
-  parameter [3:0]   PCIE_CAP_CAPABILITY_VERSION = 4'h2,
-  parameter [3:0]   PCIE_CAP_DEVICE_PORT_TYPE = 4'h0,
-
-  //DEV CAP
-  parameter integer DEV_CAP_ENDPOINT_L0S_LATENCY = 0,
-  parameter integer DEV_CAP_ENDPOINT_L1_LATENCY = 0,
-  parameter         DEV_CAP_ROLE_BASED_ERROR = "TRUE",
-  parameter         DEV_CAP_ENABLE_SLOT_PWR_LIMIT_SCALE = "FALSE",
-  parameter         DEV_CAP_ENABLE_SLOT_PWR_LIMIT_VALUE = "FALSE",
-
-  //DEV CONTROL
-  parameter         DEV_CONTROL_AUX_POWER_SUPPORTED = "FALSE",
-  parameter         DEV_CONTROL_EXT_TAG_DEFAULT = "TRUE",
-
-  //LINK CAP
-  parameter         LINK_CAP_ASPM_SUPPORT = 3,
-  parameter         LINK_CAP_L0S_EXIT_LATENCY_COMCLK_GEN1 = 7,
-  parameter         LINK_CAP_L0S_EXIT_LATENCY_COMCLK_GEN2 = 7,
-  parameter         LINK_CAP_L0S_EXIT_LATENCY_GEN1 = 7,
-  parameter         LINK_CAP_L0S_EXIT_LATENCY_GEN2 = 7,
-  parameter         LINK_CAP_L1_EXIT_LATENCY_COMCLK_GEN1 = 7,
-  parameter         LINK_CAP_L1_EXIT_LATENCY_COMCLK_GEN2 = 7,
-  parameter         LINK_CAP_L1_EXIT_LATENCY_GEN1 = 7,
-  parameter         LINK_CAP_L1_EXIT_LATENCY_GEN2 = 7,
-  parameter         LINK_CAP_CLOCK_POWER_MANAGEMENT = "FALSE",
-  parameter         LINK_CAP_SURPRISE_DOWN_ERROR_CAPABLE = "FALSE",
-  parameter         LINK_CAP_DLL_LINK_ACTIVE_REPORTING_CAP = "FALSE",
-  parameter         LINK_CAP_ASPM_OPTIONALITY = "FALSE",
-  parameter         LINK_STATUS_SLOT_CLOCK_CONFIG = "TRUE",
-
-  //DEV CAP 2
-  parameter         CPL_TIMEOUT_DISABLE_SUPPORTED = "TRUE",
-  parameter [3:0]   CPL_TIMEOUT_RANGES_SUPPORTED = 4'h0,
-
-  //LINK CONTROL 2 CAP
-  parameter [3:0]   LINK_CTRL2_TARGET_LINK_SPEED = 4'h2,
-  parameter         LINK_CTRL2_HW_AUTONOMOUS_SPEED_DISABLE = "FALSE",
-  parameter         LINK_CTRL2_DEEMPHASIS = "FALSE",
-  parameter         PCIE_REVISION = 2,
-  parameter [7:0]   PCIE_CAP_CAPABILITY_ID = 8'h10,
-  parameter         PCIE_CAP_SLOT_IMPLEMENTED = "FALSE",
-  parameter         PCIE_CAP_RSVD_15_14 = 0,
-  parameter integer DEV_CAP_MAX_PAYLOAD_SUPPORTED = 2,
-  parameter integer DEV_CAP_PHANTOM_FUNCTIONS_SUPPORT = 0,
-  parameter         DEV_CAP_EXT_TAG_SUPPORTED = "FALSE",
-  parameter         DEV_CAP_RSVD_14_12 = 0,
-  parameter         DEV_CAP_RSVD_17_16 = 0,
-  parameter         DEV_CAP_FUNCTION_LEVEL_RESET_CAPABLE = "FALSE",
-  parameter         DEV_CAP_RSVD_31_29 = 0,
-  parameter [3:0]   LINK_CAP_MAX_LINK_SPEED = 4'h2,
-  parameter [5:0]   LINK_CAP_MAX_LINK_WIDTH = 6'h1,
-  parameter         LINK_CONTROL_RCB = 0,
-  parameter         LINK_CAP_RSVD_23 = 0,
-  parameter         LINK_CAP_LINK_BANDWIDTH_NOTIFICATION_CAP = "FALSE",
-  parameter         SLOT_CAP_ATT_BUTTON_PRESENT = "FALSE",
-  parameter         SLOT_CAP_ATT_INDICATOR_PRESENT = "FALSE",
-  parameter         SLOT_CAP_ELEC_INTERLOCK_PRESENT = "FALSE",
-  parameter         SLOT_CAP_HOTPLUG_CAPABLE = "FALSE",
-  parameter         SLOT_CAP_HOTPLUG_SURPRISE = "FALSE",
-  parameter         SLOT_CAP_MRL_SENSOR_PRESENT = "FALSE",
-  parameter         SLOT_CAP_NO_CMD_COMPLETED_SUPPORT = "FALSE",
-  parameter [12:0]  SLOT_CAP_PHYSICAL_SLOT_NUM = 13'h0000,
-  parameter         SLOT_CAP_POWER_CONTROLLER_PRESENT = "FALSE",
-  parameter         SLOT_CAP_POWER_INDICATOR_PRESENT = "FALSE",
-  parameter         SLOT_CAP_SLOT_POWER_LIMIT_SCALE = 0,
-  parameter [7:0]   SLOT_CAP_SLOT_POWER_LIMIT_VALUE = 8'b00011010,
-  parameter         ROOT_CAP_CRS_SW_VISIBILITY = "FALSE",
-  parameter         DEV_CAP2_ARI_FORWARDING_SUPPORTED = "FALSE",
-  parameter         DEV_CAP2_ATOMICOP32_COMPLETER_SUPPORTED = "FALSE",
-  parameter         DEV_CAP2_ATOMICOP64_COMPLETER_SUPPORTED = "FALSE",
-  parameter         DEV_CAP2_ATOMICOP_ROUTING_SUPPORTED = "FALSE",
-  parameter         DEV_CAP2_CAS128_COMPLETER_SUPPORTED = "FALSE",
-  parameter         DEV_CAP2_NO_RO_ENABLED_PRPR_PASSING = "FALSE",
-  parameter         DEV_CAP2_LTR_MECHANISM_SUPPORTED = "FALSE",
-  parameter [1:0]   DEV_CAP2_TPH_COMPLETER_SUPPORTED = 2'b00,
-  parameter         DEV_CAP2_EXTENDED_FMT_FIELD_SUPPORTED = "FALSE",
-  parameter         DEV_CAP2_ENDEND_TLP_PREFIX_SUPPORTED = "FALSE",
-  parameter [1:0]   DEV_CAP2_MAX_ENDEND_TLP_PREFIXES = 2'h0,
-
-
-  //MSIX CAP
-  parameter [7:0]   MSIX_CAP_ID = 8'h11,
-  parameter         MSIX_CAP_PBA_BIR = 4,
-  parameter [28:0]  MSIX_CAP_PBA_OFFSET = 29'h0,
-  parameter         MSIX_CAP_TABLE_BIR = 2,
-  parameter [28:0]  MSIX_CAP_TABLE_OFFSET = 29'h0,
-  parameter [10:0]  MSIX_CAP_TABLE_SIZE = 11'h007,
-
-  //AER CAP
-  parameter [15:0]  AER_CAP_ID = 16'h0001,
-  parameter [3:0]   AER_CAP_VERSION = 4'h1,
-  parameter         AER_CAP_ECRC_CHECK_CAPABLE = "TRUE",
-  parameter         AER_CAP_ECRC_GEN_CAPABLE = "TRUE",
-  parameter         AER_CAP_MULTIHEADER = "FALSE",
-  parameter [23:0]  AER_CAP_OPTIONAL_ERR_SUPPORT = 24'h000000,
-  parameter         AER_CAP_PERMIT_ROOTERR_UPDATE = "FALSE",
-
-  //VC CAP
-  parameter [15:0]  VC_CAP_ID = 16'h0002,
-  parameter [3:0]   VC_CAP_VERSION = 4'h1,
-  parameter         VC_CAP_REJECT_SNOOP_TRANSACTIONS = "FALSE",
-
-  //DSN CAP
-  parameter [15:0]  DSN_CAP_ID = 16'h0003,
-  parameter [3:0]   DSN_CAP_VERSION = 4'h1,
-
-  //RBAR CAP
-  parameter [15:0]  RBAR_CAP_ID = 16'h0015,
-  parameter [3:0]   RBAR_CAP_VERSION = 4'h1,
-
+  parameter [11:0]  RBAR_BASE_PTR = 12'h000,
   parameter [4:0]   RBAR_CAP_CONTROL_ENCODEDBAR0 = 5'h00,
   parameter [4:0]   RBAR_CAP_CONTROL_ENCODEDBAR1 = 5'h00,
   parameter [4:0]   RBAR_CAP_CONTROL_ENCODEDBAR2 = 5'h00,
@@ -318,7 +201,7 @@ module pcie_7x_0_core_top # (
   parameter [2:0]   RBAR_CAP_INDEX3 = 3'h0,
   parameter [2:0]   RBAR_CAP_INDEX4 = 3'h0,
   parameter [2:0]   RBAR_CAP_INDEX5 = 3'h0,
-
+  parameter         RBAR_CAP_ON = "FALSE",
   parameter [31:0]  RBAR_CAP_SUP0 = 32'h00001,
   parameter [31:0]  RBAR_CAP_SUP1 = 32'h00001,
   parameter [31:0]  RBAR_CAP_SUP2 = 32'h00001,
@@ -326,33 +209,6 @@ module pcie_7x_0_core_top # (
   parameter [31:0]  RBAR_CAP_SUP4 = 32'h00001,
   parameter [31:0]  RBAR_CAP_SUP5 = 32'h00001,
   parameter [2:0]   RBAR_NUM = 3'h0,
-
-  //VSEC CAP
-  parameter [15:0]  VSEC_CAP_ID = 16'h000B,
-  parameter [3:0]   VSEC_CAP_VERSION = 4'h1,
-  parameter [15:0]  VSEC_CAP_HDR_ID = 16'h1234,
-  parameter [11:0]  VSEC_CAP_HDR_LENGTH = 12'h018,
-  parameter [3:0]   VSEC_CAP_HDR_REVISION = 4'h1,
-  parameter         VSEC_CAP_IS_LINK_VISIBLE = "TRUE",
-
-  parameter         CMD_INTX_IMPLEMENTED = "TRUE",
-
-  parameter         DISABLE_LANE_REVERSAL = "TRUE",
-  parameter         DISABLE_RX_POISONED_RESP = "FALSE",
-  parameter         DISABLE_SCRAMBLING = "FALSE",
-
-  parameter [10:0]  ENABLE_MSG_ROUTE = 11'b00000000000,
-  parameter         ENABLE_RX_TD_ECRC_TRIM = "FALSE",
-
-  parameter [9:0]   LAST_CONFIG_DWORD = 10'h3FF,
-
-  parameter [14:0]  LL_ACK_TIMEOUT = 15'h0000,
-  parameter         LL_ACK_TIMEOUT_EN = "FALSE",
-  parameter integer LL_ACK_TIMEOUT_FUNC = 0,
-  parameter [14:0]  LL_REPLAY_TIMEOUT = 15'h0000,
-  parameter         LL_REPLAY_TIMEOUT_EN = "FALSE",
-  parameter integer LL_REPLAY_TIMEOUT_FUNC = 1,
-  parameter [5:0]   LTSSM_MAX_LINK_WIDTH = 6'h1,
 
   parameter         RECRC_CHK = 0,
   parameter         RECRC_CHK_TRIM = "FALSE",
@@ -377,6 +233,10 @@ module pcie_7x_0_core_top # (
   parameter         USER_CLK_FREQ = 1,
   parameter         USER_CLK2_DIV2 = "FALSE",
 
+  parameter [11:0]  VC_BASE_PTR = 12'h000,
+  parameter [11:0]  VC_CAP_NEXTPTR = 12'h000,
+  parameter         VC_CAP_ON = "FALSE",
+  parameter         VC_CAP_REJECT_SNOOP_TRANSACTIONS = "FALSE",
 
   parameter         VC0_CPL_INFINITE = "TRUE",
   parameter [12:0]  VC0_RX_RAM_LIMIT = 13'h7FF,
@@ -388,21 +248,54 @@ module pcie_7x_0_core_top # (
   parameter         VC0_TOTAL_CREDITS_PH = 4,
   parameter         VC0_TX_LASTPACKET = 29,
 
+  parameter [11:0]  VSEC_BASE_PTR = 12'h000,
+  parameter [11:0]  VSEC_CAP_NEXTPTR = 12'h000,
+  parameter         VSEC_CAP_ON = "FALSE",
+
   parameter         DISABLE_ASPM_L1_TIMER = "FALSE",
   parameter         DISABLE_BAR_FILTERING = "FALSE",
   parameter         DISABLE_ID_CHECK = "FALSE",
   parameter         DISABLE_RX_TC_FILTER = "FALSE",
   parameter [7:0]   DNSTREAM_LINK_NUM = 8'h00,
 
+  parameter [15:0]  DSN_CAP_ID = 16'h0003,
+  parameter [3:0]   DSN_CAP_VERSION = 4'h1,
   parameter         ENTER_RVRY_EI_L0 = "TRUE",
   parameter [4:0]   INFER_EI = 5'h00,
   parameter         IS_SWITCH = "FALSE",
+
+  parameter         LINK_CAP_ASPM_SUPPORT = 1,
+  parameter         LINK_CAP_CLOCK_POWER_MANAGEMENT = "FALSE",
+  parameter         LINK_CAP_L0S_EXIT_LATENCY_COMCLK_GEN1 = 7,
+  parameter         LINK_CAP_L0S_EXIT_LATENCY_COMCLK_GEN2 = 7,
+  parameter         LINK_CAP_L0S_EXIT_LATENCY_GEN1 = 7,
+  parameter         LINK_CAP_L0S_EXIT_LATENCY_GEN2 = 7,
+  parameter         LINK_CAP_L1_EXIT_LATENCY_COMCLK_GEN1 = 7,
+  parameter         LINK_CAP_L1_EXIT_LATENCY_COMCLK_GEN2 = 7,
+  parameter         LINK_CAP_L1_EXIT_LATENCY_GEN1 = 7,
+  parameter         LINK_CAP_L1_EXIT_LATENCY_GEN2 = 7,
+  parameter         LINK_CAP_RSVD_23 = 0,
+  parameter         LINK_CONTROL_RCB = 0,
+
+  parameter [7:0]   MSI_BASE_PTR = 8'h48,
+  parameter [7:0]   MSI_CAP_ID = 8'h05,
+  parameter [7:0]   MSI_CAP_NEXTPTR = 8'h60,
+  parameter [7:0]   MSIX_BASE_PTR = 8'h9C,
+  parameter [7:0]   MSIX_CAP_ID = 8'h11,
+  parameter [7:0]   MSIX_CAP_NEXTPTR =8'h00,
 
   parameter         N_FTS_COMCLK_GEN1 = 255,
   parameter         N_FTS_COMCLK_GEN2 = 255,
   parameter         N_FTS_GEN1 = 255,
   parameter         N_FTS_GEN2 = 255,
 
+  parameter [7:0]   PCIE_BASE_PTR = 8'h60,
+  parameter [7:0]   PCIE_CAP_CAPABILITY_ID = 8'h10,
+  parameter [3:0]   PCIE_CAP_CAPABILITY_VERSION = 4'h2,
+  parameter         PCIE_CAP_ON = "TRUE",
+  parameter         PCIE_CAP_RSVD_15_14 = 0,
+  parameter         PCIE_CAP_SLOT_IMPLEMENTED = "FALSE",
+  parameter         PCIE_REVISION = 2,
 
   parameter         PL_AUTO_CONFIG = 0,
   parameter         PL_FAST_TRAIN = "FALSE",
@@ -413,9 +306,33 @@ module pcie_7x_0_core_top # (
   parameter         TRANSCEIVER_CTRL_STATUS_PORTS = "FALSE", 
   parameter         SHARED_LOGIC_IN_CORE = "FALSE",
 
+  parameter [7:0]   PM_BASE_PTR = 8'h40,
+  parameter         PM_CAP_AUXCURRENT = 0,
+  parameter [7:0]   PM_CAP_ID = 8'h01,
+  parameter         PM_CAP_ON = "TRUE",
+  parameter         PM_CAP_PME_CLOCK = "FALSE",
+  parameter         PM_CAP_RSVD_04 = 0,
+  parameter         PM_CAP_VERSION = 3,
+  parameter         PM_CSR_BPCCEN = "FALSE",
+  parameter         PM_CSR_B2B3 = "FALSE",
+
+  parameter         ROOT_CAP_CRS_SW_VISIBILITY = "FALSE",
   parameter         SELECT_DLL_IF = "FALSE",
+  parameter         SLOT_CAP_ATT_BUTTON_PRESENT = "FALSE",
+  parameter         SLOT_CAP_ATT_INDICATOR_PRESENT = "FALSE",
+  parameter         SLOT_CAP_ELEC_INTERLOCK_PRESENT = "FALSE",
+  parameter         SLOT_CAP_HOTPLUG_CAPABLE = "FALSE",
+  parameter         SLOT_CAP_HOTPLUG_SURPRISE = "FALSE",
+  parameter         SLOT_CAP_MRL_SENSOR_PRESENT = "FALSE",
+  parameter         SLOT_CAP_NO_CMD_COMPLETED_SUPPORT = "FALSE",
+  parameter [12:0]  SLOT_CAP_PHYSICAL_SLOT_NUM = 13'h0000,
+  parameter         SLOT_CAP_POWER_CONTROLLER_PRESENT = "FALSE",
+  parameter         SLOT_CAP_POWER_INDICATOR_PRESENT = "FALSE",
+  parameter         SLOT_CAP_SLOT_POWER_LIMIT_SCALE = 0,
+  parameter [7:0]   SLOT_CAP_SLOT_POWER_LIMIT_VALUE = 8'h00,
 
   parameter integer SPARE_BIT0 = 0,
+
   parameter integer SPARE_BIT1 = 0,
   parameter integer SPARE_BIT2 = 0,
   parameter integer SPARE_BIT3 = 0,
@@ -439,13 +356,32 @@ module pcie_7x_0_core_top # (
   parameter         EXIT_LOOPBACK_ON_EI = "TRUE",
 
   parameter         CFG_ECRC_ERR_CPLSTAT = 0,
+  parameter [7:0]   CAPABILITIES_PTR = 8'h40,
   parameter [6:0]   CRM_MODULE_RSTS = 7'h00,
+  parameter         DEV_CAP_ENABLE_SLOT_PWR_LIMIT_SCALE = "TRUE",
+  parameter         DEV_CAP_ENABLE_SLOT_PWR_LIMIT_VALUE = "TRUE",
+  parameter         DEV_CAP_FUNCTION_LEVEL_RESET_CAPABLE = "FALSE",
+  parameter         DEV_CAP_ROLE_BASED_ERROR = "TRUE",
+  parameter         DEV_CAP_RSVD_14_12 = 0,
+  parameter         DEV_CAP_RSVD_17_16 = 0,
+  parameter         DEV_CAP_RSVD_31_29 = 0,
+  parameter         DEV_CONTROL_AUX_POWER_SUPPORTED = "FALSE",
+
+  parameter [15:0]  VC_CAP_ID = 16'h0002,
+  parameter [3:0]   VC_CAP_VERSION = 4'h1,
+  parameter [15:0]  VSEC_CAP_HDR_ID = 16'h1234,
+  parameter [11:0]  VSEC_CAP_HDR_LENGTH = 12'h018,
+  parameter [3:0]   VSEC_CAP_HDR_REVISION = 4'h1,
+  parameter [15:0]  VSEC_CAP_ID = 16'h000B,
+  parameter         VSEC_CAP_IS_LINK_VISIBLE = "TRUE",
+  parameter [3:0]   VSEC_CAP_VERSION = 4'h1,
 
   parameter         DISABLE_ERR_MSG = "FALSE",
   parameter         DISABLE_LOCKED_FILTER = "FALSE",
   parameter         DISABLE_PPM_FILTER = "FALSE",
   parameter         ENDEND_TLP_PREFIX_FORWARDING_SUPPORTED = "FALSE",
   parameter         INTERRUPT_STAT_AUTO = "TRUE",
+  parameter         MPS_FORCE = "FALSE",
   parameter [14:0]  PM_ASPML0S_TIMEOUT = 15'h0000,
   parameter         PM_ASPML0S_TIMEOUT_EN = "FALSE",
   parameter         PM_ASPML0S_TIMEOUT_FUNC = 0,
@@ -459,6 +395,22 @@ module pcie_7x_0_core_top # (
   parameter         TECRC_EP_INV = "FALSE",
   parameter         UR_CFG1 = "TRUE",
   parameter         USE_RID_PINS = "FALSE",
+
+// New Parameters
+  parameter         DEV_CAP2_ENDEND_TLP_PREFIX_SUPPORTED = "FALSE",
+  parameter         DEV_CAP2_EXTENDED_FMT_FIELD_SUPPORTED = "FALSE",
+  parameter         DEV_CAP2_LTR_MECHANISM_SUPPORTED = "FALSE",
+  parameter [1:0]   DEV_CAP2_MAX_ENDEND_TLP_PREFIXES = 2'h0,
+  parameter         DEV_CAP2_NO_RO_ENABLED_PRPR_PASSING = "FALSE",
+
+  parameter         LINK_CAP_SURPRISE_DOWN_ERROR_CAPABLE = "FALSE",
+
+  parameter [15:0]  AER_CAP_ID = 16'h0001,
+  parameter [3:0]   AER_CAP_VERSION = 4'h1,
+
+  parameter [15:0]  RBAR_CAP_ID = 16'h0015,
+  parameter [11:0]  RBAR_CAP_NEXTPTR = 12'h000,
+  parameter [3:0]   RBAR_CAP_VERSION = 4'h1,
   parameter         PCIE_USE_MODE = "1.0",
   parameter         PCIE_GT_DEVICE = "GTP",
   parameter         PCIE_CHAN_BOND = 1,

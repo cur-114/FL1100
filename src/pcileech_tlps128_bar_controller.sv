@@ -53,13 +53,15 @@ module pcileech_tlps128_bar_controller(
     IfEventRingRequest.source event_ring_req_3,
     IfMemoryWrite.source     mem_wr_out_1,
     IfMemoryWrite.source     mem_wr_out_2,
-    IfMemoryWrite.source     mem_wr_out_3, //Set Endpoint State
+    IfMemoryWrite.source     mem_wr_out_3,
+    IfMemoryWrite.source     mem_wr_out_4, //Set Endpoint State
     IfMemoryRead.source      mem_rd_out_1,
     IfMemoryRead.source      mem_rd_out_2,
     IfMemoryRead.source      mem_rd_out_3,
-    IfMemoryRead.source      mem_rd_out_4, //Set Endpoint State
+    IfMemoryRead.source      mem_rd_out_4,
+    IfMemoryRead.source      mem_rd_out_5, //Set Endpoint State
     IfInterrupterController.source interrupter_controller_out,
-    output                   pm_wake
+    IfDebugEventRing.sink    dbg_evt_ring
 
 //    IfMsiXRequest.source    msix_req_out
 );
@@ -170,12 +172,14 @@ module pcileech_tlps128_bar_controller(
         .mem_wr_out_1       ( mem_wr_out_1                  ),
         .mem_wr_out_2       ( mem_wr_out_2                  ),
         .mem_wr_out_3       ( mem_wr_out_3                  ),
+        .mem_wr_out_4       ( mem_wr_out_4                  ),
         .mem_rd_out_1       ( mem_rd_out_1                  ),
         .mem_rd_out_2       ( mem_rd_out_2                  ),
         .mem_rd_out_3       ( mem_rd_out_3                  ),
         .mem_rd_out_4       ( mem_rd_out_4                  ),
+        .mem_rd_out_5       ( mem_rd_out_5                  ),
         .interrupter_controller_out ( interrupter_controller_out ),
-        .pm_wake            ( pm_wake                       )
+        .dbg_evt_ring       ( dbg_evt_ring                  )
     );
     
     pcileech_bar_impl_none i_bar1(
