@@ -14,5 +14,5 @@ project to display transmission data from debugger-linux in a GUI format
 
 ---
 
-discord: _cur
+discord: _cur  
 unlock/replace dna lock service: https://discord.gg/cBMsYsHUq2
